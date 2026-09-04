@@ -1,0 +1,20 @@
+[[permission]]
+identifier = "servo-runtime"
+description = "Allows the main window to use the explicitly exposed servo commissioning commands."
+commands.allow = [
+  "import_profile",
+  "get_active_profile",
+  "list_serial_ports",
+  "connect_device",
+  "disconnect_device",
+  "get_connection_status",
+  "read_parameters",
+  "write_parameter",
+  "batch_write_parameters",
+  "capture_parameter_snapshot",
+  "compare_parameter_snapshot",
+  "apply_parameters",
+  "persist_parameters",
+  "read_statuses",
+  "get_audit_log",
+]

@@ -1,0 +1,94 @@
+{
+  "schemaVersion": "1.0",
+  "device": {
+    "id": "example-servo",
+    "name": "示例伺服设备",
+    "profileVersion": "1.0.0"
+  },
+  "transport": {
+    "kind": "modbus-rtu",
+    "defaultSlaveId": 1,
+    "defaultBaudRate": 19200,
+    "allowedBaudRates": [9600, 19200, 38400, 115200],
+    "dataBits": 8,
+    "parity": "even",
+    "stopBits": 1,
+    "timeoutMs": 800
+  },
+  "parameters": [
+    {
+      "semanticId": "control.main_gain",
+      "parameterId": "gain-main",
+      "name": "主增益",
+      "group": "控制",
+      "address": 256,
+      "rawType": "u16",
+      "decimals": 1,
+      "unit": "%",
+      "min": 0,
+      "max": 100,
+      "defaultValue": 10,
+      "access": "rw",
+      "risk": "medium",
+      "requiresRestart": false,
+      "applicableModes": ["all"],
+      "enumValues": [],
+      "description": ""
+    },
+    {
+      "semanticId": "system.operation_mode",
+      "parameterId": "operation-mode",
+      "name": "运行模式",
+      "group": "系统",
+      "address": 288,
+      "rawType": "u16",
+      "decimals": 0,
+      "unit": "",
+      "min": 0,
+      "max": 2,
+      "defaultValue": 0,
+      "access": "rw",
+      "risk": "high",
+      "requiresRestart": true,
+      "applicableModes": ["all"],
+      "enumValues": [
+        { "value": 0, "label": "模式 A" },
+        { "value": 1, "label": "模式 B" },
+        { "value": 2, "label": "模式 C" }
+      ],
+      "description": ""
+    }
+  ],
+  "statuses": [
+    {
+      "id": "feedback-speed",
+      "name": "反馈速度",
+      "address": 512,
+      "rawType": "i16",
+      "decimals": 0,
+      "unit": "r/min"
+    },
+    {
+      "id": "load-ratio",
+      "name": "负载率",
+      "address": 513,
+      "rawType": "u16",
+      "decimals": 1,
+      "unit": "%"
+    }
+  ],
+  "operations": {
+    "commandRegister": 768,
+    "statusRegister": 769,
+    "apply": {
+      "command": 4660,
+      "successStatus": 22136,
+      "timeoutMs": 1000
+    },
+    "persist": {
+      "command": 39612,
+      "successStatus": 57072,
+      "timeoutMs": 1500
+    }
+  }
+}
