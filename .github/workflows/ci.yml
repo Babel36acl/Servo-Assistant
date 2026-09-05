@@ -54,5 +54,13 @@ jobs:
         uses: tauri-apps/tauri-action@1ddc7b49b13c3038297360482fcb3e058764d7c9 # v0.6.2
         with:
           tauriScript: pnpm tauri
-          uploadWorkflowArtifacts: true
-          workflowArtifactNamePattern: servo-assistant-[platform]-[arch]-[bundle]
+
+      - name: Upload installers
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: servo-assistant-windows-x64
+          path: |
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+          retention-days: 14
