@@ -3,11 +3,13 @@ mod discovery;
 mod ethercat;
 mod master;
 mod modbus;
+mod modbus_decode;
 mod network_capture;
 mod pcap_file;
 mod profile;
 mod recorded_port;
 mod recording;
+mod recording_index;
 mod runtime;
 
 use runtime::{
@@ -38,6 +40,9 @@ pub fn run() {
                 data_dir.join("captures"),
                 recorder.clone(),
             ));
+            app.manage(recording_index::RecordingIndex::new(
+                data_dir.join("recording-indexes"),
+            ));
             app.manage(recorder);
             Ok(())
         })
@@ -46,7 +51,8 @@ pub fn run() {
             recording::stop_recording,
             recording::recording_status,
             recording::recording_sessions,
-            recording::recording_page,
+            recording_index::recording_page,
+            recording_index::recording_modbus_transaction,
             pcap_file::capture_file_page,
             pcap_file::export_recording_pcap,
             ethercat::decode_ethercat,

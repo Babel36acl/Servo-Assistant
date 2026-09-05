@@ -431,23 +431,14 @@ pub async fn export_recording_pcap(path: String) -> Result<ExportResult, String>
             crate::recording::timestamp_us()
         ));
         // Validate the source before creating the destination.
-        let mut page = crate::recording::read_page(&path, 0)?;
+        crate::recording::session_files(Path::new(&path))?;
         let mut writer = PcapWriter::create(&output)?;
-        let mut warning = None;
-        loop {
-            if let Some(e) = page.warning {
-                warning = Some(e);
+        let warning = crate::recording::visit_records(&path, |r| {
+            if r.protocol == "ethernet" && r.direction != "event" {
+                writer.packet(&r.source, &r.bytes, r.timestamp_us, r.bytes.len() as u32)?;
             }
-            for r in page.records {
-                if r.protocol == "ethernet" && r.direction != "event" {
-                    writer.packet(&r.source, &r.bytes, r.timestamp_us, r.bytes.len() as u32)?;
-                }
-            }
-            match page.next_offset {
-                Some(n) => page = crate::recording::read_page(&path, n)?,
-                None => break,
-            }
-        }
+            Ok(())
+        })?;
         writer.finish()?;
         Ok(ExportResult {
             path: output.to_string_lossy().into(),

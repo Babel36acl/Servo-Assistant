@@ -249,7 +249,9 @@ fn recording_covers_partial_reads_crc_retry_and_does_not_retry_writes() {
     assert_eq!(c.read_transaction(12, 1).unwrap(), [42]);
     assert!(c.write_single_register(12, 9).is_err());
     let status = recorder.stop().unwrap();
-    let records = crate::recording::read_page(&status.path, 0)
+    let index = crate::recording_index::RecordingIndex::new(root.join("indexes"));
+    let records = index
+        .page(&status.path, 0, &Default::default(), false)
         .unwrap()
         .records;
     let tx = records
@@ -260,6 +262,37 @@ fn recording_covers_partial_reads_crc_retry_and_does_not_retry_writes() {
     assert_eq!(tx[0].bytes[1], 3);
     assert_eq!(tx[2].bytes[1], 6);
     assert_ne!(tx[0].transaction, tx[1].transaction);
+    let first = index
+        .transaction(
+            &status.path,
+            &tx[0].source,
+            &tx[0].protocol,
+            tx[0].transaction,
+        )
+        .unwrap();
+    assert!(first.response.error.unwrap().contains("CRC"));
+    assert!(first.outcome.contains("失败"));
+    let recovered = index
+        .transaction(
+            &status.path,
+            &tx[1].source,
+            &tx[1].protocol,
+            tx[1].transaction,
+        )
+        .unwrap();
+    assert_eq!(recovered.response.values, [42]);
+    assert_eq!(recovered.outcome, "请求与响应匹配");
+    let failed_write = index
+        .transaction(
+            &status.path,
+            &tx[2].source,
+            &tx[2].protocol,
+            tx[2].transaction,
+        )
+        .unwrap();
+    assert!(failed_write.outcome.contains("失败"));
+    assert_eq!(failed_write.request.values, [9]);
+
     let received = records
         .iter()
         .filter(|r| r.direction == "rx")

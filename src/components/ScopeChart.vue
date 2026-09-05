@@ -41,7 +41,8 @@ const paths = computed(() => props.series.map((series) => {
       <polyline v-for="path in paths" :key="path.id" :points="path.points" :stroke="path.color" />
       <text x="24" y="220">各通道独立缩放 · 最近 300 个采样点</text>
     </svg>
-    <div class="scope-legend">
+    <p v-if="!series.length" class="scope-empty">连接设备并选择状态通道后显示曲线</p>
+    <div v-else class="scope-legend">
       <div v-for="path in paths" :key="path.id">
         <i :style="{ background: path.color }"></i>
         <strong>{{ path.name }}</strong>
@@ -65,4 +66,7 @@ text { fill: #637984; font-size: 11px; }
 .scope-legend span { font-size: 12px; font-variant-numeric: tabular-nums; }
 .scope-legend small { grid-column: 2 / -1; color: #8195a0; font-size: 9px; }
 @media (max-width: 1180px) { .scope-chart { grid-template-columns: 1fr; } .scope-legend { display: grid; grid-template-columns: repeat(3, 1fr); } }
+
+.scope-empty { align-self: center; padding: 24px; color: var(--muted); font-size: 12px; line-height: 1.8; text-align: center; }
+@media (max-width: 640px) { .scope-legend { grid-template-columns: 1fr; } }
 </style>

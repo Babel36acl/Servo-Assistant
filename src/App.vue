@@ -22,6 +22,18 @@ import type {
   StatusValue,
 } from "./types";
 
+const pages = [
+  { id: 'connection', label: '设备与连接', caption: '导入配置 · 建立连接', icon: 'M7 3v4m10-4v4M5 7h14v4a7 7 0 0 1-14 0V7Zm7 11v3' },
+  { id: 'parameters', label: '参数工作区', caption: '读取 · 比较 · 安全写入', icon: 'M4 5h16M4 12h16M4 19h16M9 3v4m6 3v4m-6 3v4' },
+  { id: 'monitor', label: '实时监控', caption: '状态量 · 六通道曲线', icon: 'M3 12h4l3-8 4 16 3-8h4' },
+  { id: 'diagnostics', label: '通讯诊断', caption: '采集设置 · 稳定性测试', icon: 'M5 20V10m7 10V4m7 16v-7' },
+  { id: 'communication', label: '通信工作台', caption: '录制解析 · EtherCAT 主站', icon: 'M3 5h18v12H3zM8 21h8m-4-4v4M7 9h3m4 4h3' },
+  { id: 'audit', label: '操作证据', caption: '操作记录 · 结果追溯', icon: 'M6 3h12v18H6zM9 7h6m-6 5h6m-6 5h4' },
+] as const;
+const backgroundActivity = ref('');
+const activePage = ref<(typeof pages)[number]['id']>('connection');
+const currentPage = computed(() => pages.find(page => page.id === activePage.value)!);
+
 const profile = ref<ServoProfile | null>(null);
 const summary = ref<ProfileSummary | null>(null);
 const connected = ref(false);
@@ -609,26 +621,28 @@ onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearT
 
 <template>
   <div class="app-shell">
-    <header class="topbar">
-      <div>
-        <p class="eyebrow">SERVO PARAMETER COMMISSIONING</p>
-        <h1>伺服参数调试器</h1>
-      </div>
-      <div class="connection-pill" :class="{ online: connected }">
-        <span class="status-dot"></span>
-        {{ connected ? (communicationError ? '通讯异常' : connectionMode === "simulator" ? "模拟器已连接" : "串口已连接") : "未连接" }}
-      </div>
-    </header>
-
-    <div v-if="errorMessage" class="banner error">
-      <strong>操作失败</strong><span>{{ errorMessage }}</span>
-      <button @click="errorMessage = ''">关闭</button>
-    </div>
-    <div class="banner info"><strong>当前状态</strong><span>{{ notice }}</span></div>
-
-    <CommunicationWorkbench />
-    <main class="workspace">
-      <aside class="sidebar">
+    <aside class="app-navigation">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">S<span>∿</span></span><div><strong>Servo Assistant</strong><small>伺服参数调试器</small></div></div>
+      <p class="nav-label">调试工作空间</p>
+      <nav aria-label="主导航">
+        <button v-for="page in pages" :key="page.id" :class="{ active: activePage === page.id }" :aria-current="activePage === page.id ? 'page' : undefined" @click="activePage = page.id">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path :d="page.icon" /></svg><span>{{ page.label }}<small>{{ page.caption }}</small></span>
+        </button>
+      </nav>
+      <div class="nav-device"><span class="nav-label">当前设备</span><strong>{{ summary?.deviceName ?? '未导入 Profile' }}</strong><small>{{ summary ? summary.parameterCount + ' 个参数 · Profile ' + summary.profileVersion : '设备定义由 Profile 提供' }}</small><button @click="activePage = 'connection'">连接设置 →</button></div>
+    </aside>
+    <div class="app-main">
+      <header class="topbar">
+        <div><p class="eyebrow">SERVO / {{ currentPage.id.toUpperCase() }}</p><h1>{{ currentPage.label }}</h1><p class="page-caption">{{ currentPage.caption }}</p></div>
+        <div class="connection-summary"><div class="connection-pill" :class="{ online: connected && !communicationError, fault: connected && !!communicationError }"><span class="status-dot"></span>{{ connected ? (communicationError ? '通讯异常' : connectionMode === 'simulator' ? '模拟器已连接' : '串口已连接') : '未连接' }}</div><button v-if="connected" class="danger-outline" :disabled="busy" @click="disconnect">断开连接</button></div>
+      </header>
+      <div v-if="errorMessage" class="banner error" role="alert"><strong>操作失败</strong><span>{{ errorMessage }}</span><button @click="errorMessage = ''">关闭</button></div>
+      <div class="banner info" role="status"><strong>当前状态</strong><span>{{ notice }}</span></div>
+      <div v-if="communicationError" class="banner error" role="alert"><strong>通讯异常</strong><span>{{ communicationError }}</span><button @click="activePage = 'diagnostics'">查看诊断</button></div>
+      <div v-if="readActive || testActive || discoveryActive" class="operation-progress" role="status"><span>{{ discoveryActive ? '正在查找设备 · ' + (discovery?.completed ?? 0) + '/' + (discovery?.total ?? '—') : readActive ? readProgress : testProgress }}</span><button v-if="discoveryActive" @click="cancelDiscovery">取消查找</button><button v-else :disabled="cancelRequested" @click="cancelRequested = true">{{ cancelRequested ? '等待当前事务结束' : '取消当前操作' }}</button></div>
+      <div v-if="backgroundActivity && activePage !== 'communication'" class="operation-progress" role="status"><span>{{ backgroundActivity }}</span><button @click="activePage = 'communication'">返回通信工作台</button></div>
+      <main class="workspace">
+        <div v-show="activePage === 'connection'" class="connection-layout">
         <section class="panel profile-panel">
           <div class="section-title"><span>01</span><h2>设备配置</h2></div>
           <div v-if="summary" class="profile-card">
@@ -636,15 +650,16 @@ onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearT
             <span>Profile {{ summary.profileVersion }}</span>
             <small>{{ summary.parameterCount }} 参数 · {{ summary.statusCount }} 状态量</small>
           </div>
-          <p v-else>未内置任何厂商或型号数据。请导入经授权的设备 Profile。</p>
+          <div v-else class="profile-empty"><span class="profile-symbol" aria-hidden="true">{ }</span><h3>从设备配置开始</h3><p>导入设备 JSON Profile，加载参数定义、寄存器地址和允许的操作。</p></div>
           <div class="button-row">
             <label class="file-button" :class="{ disabled: busy || connected }">
               导入 JSON
               <input type="file" accept="application/json,.json" :disabled="busy || connected" @change="handleProfileFile" />
             </label>
           </div>
+        <ol class="setup-steps"><li :class="{ complete: profile }"><b>1</b><div><strong>导入设备配置</strong><p>使用对应设备的 JSON Profile</p></div></li><li :class="{ complete: connected }"><b>2</b><div><strong>选择模式并连接</strong><p>可先用模拟器安全演练</p></div></li><li><b>3</b><div><strong>读取后再修改</strong><p>写入前比较，写入后回读</p></div></li></ol>
+          <button class="secondary full" :disabled="!profile" @click="activePage = 'parameters'">进入参数工作区 →</button>
         </section>
-
         <section class="panel connection-panel">
           <div class="section-title"><span>02</span><h2>连接设置</h2></div>
           <label>运行模式
@@ -715,16 +730,71 @@ onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearT
           </template>
           <button v-if="connected" class="danger-outline full" :disabled="busy" @click="disconnect">断开连接</button>
         </section>
+        </div>
+        <div v-show="activePage === 'parameters'" class="page-stack">
+        <section class="panel parameter-panel">
+          <div class="parameter-toolbar">
+            <div>
+              <p class="eyebrow">PARAMETER WORKSPACE</p>
+              <h2>参数读取与安全写入</h2>
+            </div>
+            <div class="toolbar-actions">
+              <input v-model="query" class="search" aria-label="搜索参数" placeholder="搜索参数 ID / 名称…" />
+              <button class="secondary" :disabled="busy || !connected" @click="readAll()">读取全部</button>
+              <button class="secondary" :disabled="busy || !connected || !failedGroups.length" @click="readAll(true)">重读失败 / 未完成组（{{ failedGroups.length }}）</button>
+            </div>
+          </div>
 
-        <section class="panel safety-panel">
-          <div class="section-title"><span>03</span><h2>参数事务</h2></div>
-          <p>应用和持久化仅在 Profile 明确定义对应命令时可用，并且必须分别确认。</p>
-          <button class="secondary full" :disabled="busy || !connected || !canApply" @click="applyChanges">应用参数</button>
-          <button class="warning full" :disabled="busy || !connected || !canPersist" @click="persistChanges">持久化参数</button>
+          <nav class="group-tabs" aria-label="参数分组">
+            <button v-for="group in groups" :key="group" :class="{ active: selectedGroup === group }" @click="selectedGroup = group">{{ group }}</button>
+          </nav>
+
+          <div v-if="comparison.length" class="comparison-bar">
+            <span>快照差异 <strong>{{ changedDifferences.length }}</strong> 项；已选 <strong>{{ selectedBatch.length }}</strong> 项</span>
+            <div>
+              <button class="secondary" @click="clearComparison">取消比较</button>
+              <button class="warning" :disabled="busy || !selectedBatch.length" @click="writeSelectedBatch">选择性批量写入</button>
+            </div>
+          </div>
+
+          <div v-if="!profile" class="workspace-empty"><h3>尚未加载参数定义</h3><p>先导入设备 Profile，再连接模拟器或真实设备读取参数。</p><button class="primary" @click="activePage = 'connection'">前往设备与连接</button></div>
+          <div v-else-if="!filteredParameters.length" class="workspace-empty"><h3>没有匹配的参数</h3><p>尝试其他关键词，或清除筛选条件。</p><button @click="query = ''; selectedGroup = '全部'">清除筛选</button></div>
+          <div v-else class="table-wrap">
+            <table>
+              <thead><tr><th v-if="comparison.length">选择</th><th>参数</th><th>名称</th><th>当前值</th><th>目标值</th><th>范围</th><th>风险</th><th></th></tr></thead>
+              <tbody>
+                <tr v-for="parameter in filteredParameters" :key="parameter.parameterId" :class="{ dirty: isDirty(parameter) }">
+                  <td v-if="comparison.length" class="select-cell">
+                    <input v-if="comparisonById.get(parameter.parameterId)?.changed && comparisonById.get(parameter.parameterId)?.writable" v-model="selectedBatch" type="checkbox" :value="parameter.parameterId" />
+                    <span v-else-if="comparisonById.get(parameter.parameterId)?.changed" title="只读参数不能批量写入">只读</span>
+                    <span v-else>—</span>
+                  </td>
+                  <td class="parameter-id"><strong>{{ parameter.parameterId }}</strong><code>{{ hex(parameter.address) }}</code></td>
+                  <td class="parameter-name"><span>{{ parameter.name }}</span><small v-if="parameter.description">{{ parameter.description }}</small></td>
+                  <td class="current-value">
+                    <template v-if="values[parameter.parameterId]">{{ values[parameter.parameterId].value }} {{ parameter.unit }} <small v-if="staleIds.has(parameter.parameterId)">（已过期 / 本次未读取）</small></template>
+                    <span v-else>未读取</span>
+                  </td>
+                  <td>
+                    <select :aria-label="`${parameter.name} 目标值`" v-if="parameter.enumValues.length" v-model.number="drafts[parameter.parameterId]" :disabled="!connected">
+                      <option v-for="choice in parameter.enumValues" :key="choice.value" :value="choice.value">{{ choice.label }}</option>
+                    </select>
+                    <div v-else class="number-field">
+                      <input :aria-label="`${parameter.name} 目标值`" v-model.number="drafts[parameter.parameterId]" type="number" :min="parameter.min" :max="parameter.max" :step="1 / 10 ** parameter.decimals" :disabled="!connected" />
+                      <span>{{ parameter.unit }}</span>
+                    </div>
+                  </td>
+                  <td><span class="range">{{ parameter.min }} … {{ parameter.max }}</span></td>
+                  <td><span class="risk" :class="parameter.risk">{{ riskLabel(parameter.risk) }}</span></td>
+                  <td><button class="write-button" :disabled="busy || !connected || staleIds.has(parameter.parameterId) || !isDirty(parameter)" @click="writeOne(parameter)">写入并回读</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </section>
-
+          <div class="parameter-utilities">
         <section class="panel snapshot-panel">
-          <div class="section-title"><span>04</span><h2>参数快照</h2></div>
+          <div class="section-title"><span>SNAP</span><h2>参数快照</h2></div>
           <p>快照保存设备原始值和工程值，可用于备份、差异比较和选择性恢复。</p>
           <button class="secondary full" :disabled="busy || !connected" @click="exportSnapshot">读取并导出快照</button>
           <label class="file-button full" :class="{ disabled: busy || !connected }">
@@ -732,9 +802,16 @@ onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearT
             <input type="file" accept="application/json,.json" :disabled="busy || !connected" @change="handleSnapshotFile" />
           </label>
         </section>
-      </aside>
-
-      <section class="content-column">
+        <section class="panel safety-panel">
+          <div class="section-title"><span>WRITE</span><h2>参数事务</h2></div>
+          <p>应用和持久化仅在 Profile 明确定义对应命令时可用，并且必须分别确认。</p>
+          <button class="secondary full" :disabled="busy || !connected || !canApply" @click="applyChanges">应用参数</button>
+          <button class="warning full" :disabled="busy || !connected || !canPersist" @click="persistChanges">持久化参数</button>
+        </section>
+          </div>
+        </div>
+        <div v-show="activePage === 'monitor'" class="page-stack">
+          <div class="monitor-status"><span>更新于 {{ statusUpdatedAt ? new Date(statusUpdatedAt).toLocaleTimeString() : '尚未读取' }} · {{ !connected ? '已断开' : !pollingEnabled ? '轮询已暂停，显示旧值' : communicationError ? '读取失败，显示旧值' : '状态轮询中' }}</span><button @click="activePage = 'diagnostics'">采集设置 →</button></div>
         <section class="status-strip">
           <article v-for="status in headlineStatuses" :key="status.id">
             <span>{{ status.name }}</span>
@@ -745,33 +822,6 @@ onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearT
             <span>实时状态</span><strong>—</strong><small>连接后自动刷新</small>
           </article>
         </section>
-
-        <section class="panel communication-panel">
-          <h2>通讯与采集设置</h2>
-          <fieldset :disabled="busy" class="communication-controls">
-            <label>校验 / 超时额外重试次数<input v-model.number="retries" type="number" min="0" max="3" /></label>
-            <label>每组读取寄存器上限<input v-model.number="maxRegisters" type="number" min="1" max="100" /></label>
-            <label>轮询等待间隔（ms）<input v-model.number="sampleInterval" type="number" min="50" max="60000" step="50" @change="normalizeSampleInterval" /></label>
-            <label class="toggle-field"><input v-model="pollingEnabled" type="checkbox" /> 状态轮询</label>
-            <button class="secondary" @click="saveCommunicationSettings">应用通讯设置</button>
-            <label>稳定性测试轮数<input v-model.number="testCycles" type="number" min="1" max="1000" /></label>
-            <button class="secondary" :disabled="!connected || probeRange.length < 2" @click="runStabilityTest">短帧 / 长帧只读测试</button>
-          </fieldset>
-          <p>设置仅保留于当前应用会话。间隔是每次状态读取完成后的等待时间；暂停曲线采集不停止通讯。</p>
-          <p>稳定性测试使用 Profile 中最长连续状态区：{{ probeRange.length ? hex(probeRange[0].address) : '—' }}，短帧 1 / 长帧 {{ probeRange.length }} 个寄存器；长帧对照不拆组。执行期间暂停日常轮询。</p>
-          <p v-if="communicationError" class="banner error">通讯异常：{{ communicationError }}</p>
-          <p v-if="communicationStats">本次串口连接统计（模拟器不计）：读取 {{ communicationStats.transactions }} · 首次成功 {{ communicationStats.firstSuccesses }} · 重试恢复 {{ communicationStats.recovered }} · 最终失败 {{ communicationStats.failed }} · CRC {{ communicationStats.crcErrors }} · LRC {{ communicationStats.lrcErrors }} · 超时 {{ communicationStats.timeouts }} · 重试 {{ communicationStats.retries }}</p>
-          <p>状态更新：{{ statusUpdatedAt ? new Date(statusUpdatedAt).toLocaleTimeString() : '尚未读取' }} · {{ !connected ? '已断开' : !pollingEnabled ? '轮询已暂停，保留旧值' : communicationError ? '读取失败，保留旧值' : '轮询已启用' }}</p>
-          <p v-if="communicationStats">最近成功：{{ communicationStats.lastSuccessMs ? new Date(communicationStats.lastSuccessMs).toLocaleString() : '—' }}</p>
-          <details v-if="communicationStats?.lastFailure"><summary>最近失败地址与响应帧</summary><pre>{{ communicationStats.lastFailure }}</pre></details>
-          <p>{{ readProgress }} {{ testProgress }}</p>
-          <button v-if="readActive || testActive" class="secondary" :disabled="cancelRequested" @click="cancelRequested = true">{{ cancelRequested ? '正在等待当前事务结束' : '取消当前读取 / 测试' }}</button>
-          <table v-if="testResults.length">
-            <thead><tr><th>帧</th><th>已测</th><th>首次成功率</th><th>重试恢复</th><th>最终失败</th><th>累计耗时</th></tr></thead>
-            <tbody><tr v-for="row in testResults" :key="row.label"><td>{{ row.label }}（{{ protocol === 'ascii' ? 11 + row.count * 4 : 5 + row.count * 2 }} 字节）</td><td>{{ row.total }}</td><td>{{ row.total ? (100 * row.first / row.total).toFixed(1) : '—' }}%</td><td>{{ row.recovered }}</td><td>{{ row.failed }}</td><td>{{ row.elapsed }} ms</td></tr></tbody>
-          </table>
-        </section>
-
         <section class="panel scope-panel">
           <div class="scope-toolbar">
             <div>
@@ -801,66 +851,36 @@ onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearT
           </div>
           <ScopeChart :series="scopeSeries" />
         </section>
-
-        <section class="panel parameter-panel">
-          <div class="parameter-toolbar">
-            <div>
-              <p class="eyebrow">PARAMETER WORKSPACE</p>
-              <h2>参数读取与安全写入</h2>
-            </div>
-            <div class="toolbar-actions">
-              <input v-model="query" class="search" placeholder="搜索参数 ID / 名称…" />
-              <button class="secondary" :disabled="busy || !connected" @click="readAll()">读取全部</button>
-              <button class="secondary" :disabled="busy || !connected || !failedGroups.length" @click="readAll(true)">重读失败 / 未完成组（{{ failedGroups.length }}）</button>
-            </div>
-          </div>
-
-          <nav class="group-tabs">
-            <button v-for="group in groups" :key="group" :class="{ active: selectedGroup === group }" @click="selectedGroup = group">{{ group }}</button>
-          </nav>
-
-          <div v-if="comparison.length" class="comparison-bar">
-            <span>快照差异 <strong>{{ changedDifferences.length }}</strong> 项；已选 <strong>{{ selectedBatch.length }}</strong> 项</span>
-            <div>
-              <button class="secondary" @click="clearComparison">取消比较</button>
-              <button class="warning" :disabled="busy || !selectedBatch.length" @click="writeSelectedBatch">选择性批量写入</button>
-            </div>
-          </div>
-
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th v-if="comparison.length">选择</th><th>参数</th><th>名称</th><th>当前值</th><th>目标值</th><th>范围</th><th>风险</th><th></th></tr></thead>
-              <tbody>
-                <tr v-for="parameter in filteredParameters" :key="parameter.parameterId" :class="{ dirty: isDirty(parameter) }">
-                  <td v-if="comparison.length" class="select-cell">
-                    <input v-if="comparisonById.get(parameter.parameterId)?.changed && comparisonById.get(parameter.parameterId)?.writable" v-model="selectedBatch" type="checkbox" :value="parameter.parameterId" />
-                    <span v-else-if="comparisonById.get(parameter.parameterId)?.changed" title="只读参数不能批量写入">只读</span>
-                    <span v-else>—</span>
-                  </td>
-                  <td class="parameter-id"><strong>{{ parameter.parameterId }}</strong><code>{{ hex(parameter.address) }}</code></td>
-                  <td class="parameter-name"><span>{{ parameter.name }}</span><small v-if="parameter.description">{{ parameter.description }}</small></td>
-                  <td class="current-value">
-                    <template v-if="values[parameter.parameterId]">{{ values[parameter.parameterId].value }} {{ parameter.unit }} <small v-if="staleIds.has(parameter.parameterId)">（已过期 / 本次未读取）</small></template>
-                    <span v-else>未读取</span>
-                  </td>
-                  <td>
-                    <select v-if="parameter.enumValues.length" v-model.number="drafts[parameter.parameterId]" :disabled="!connected">
-                      <option v-for="choice in parameter.enumValues" :key="choice.value" :value="choice.value">{{ choice.label }}</option>
-                    </select>
-                    <div v-else class="number-field">
-                      <input v-model.number="drafts[parameter.parameterId]" type="number" :min="parameter.min" :max="parameter.max" :step="1 / 10 ** parameter.decimals" :disabled="!connected" />
-                      <span>{{ parameter.unit }}</span>
-                    </div>
-                  </td>
-                  <td><span class="range">{{ parameter.min }} … {{ parameter.max }}</span></td>
-                  <td><span class="risk" :class="parameter.risk">{{ riskLabel(parameter.risk) }}</span></td>
-                  <td><button class="write-button" :disabled="busy || !connected || staleIds.has(parameter.parameterId) || !isDirty(parameter)" @click="writeOne(parameter)">写入并回读</button></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+        </div>
+        <div v-show="activePage === 'diagnostics'" class="page-stack">
+        <section class="panel communication-panel">
+          <h2>通讯与采集设置</h2>
+          <fieldset :disabled="busy" class="communication-controls">
+            <label>校验 / 超时额外重试次数<input v-model.number="retries" type="number" min="0" max="3" /></label>
+            <label>每组读取寄存器上限<input v-model.number="maxRegisters" type="number" min="1" max="100" /></label>
+            <label>轮询等待间隔（ms）<input v-model.number="sampleInterval" type="number" min="50" max="60000" step="50" @change="normalizeSampleInterval" /></label>
+            <label class="toggle-field"><input v-model="pollingEnabled" type="checkbox" /> 状态轮询</label>
+            <button class="secondary" @click="saveCommunicationSettings">应用通讯设置</button>
+            <label>稳定性测试轮数<input v-model.number="testCycles" type="number" min="1" max="1000" /></label>
+            <button class="secondary" :disabled="!connected || probeRange.length < 2" @click="runStabilityTest">短帧 / 长帧只读测试</button>
+          </fieldset>
+          <p>设置仅保留于当前应用会话。间隔是每次状态读取完成后的等待时间；暂停曲线采集不停止通讯。</p>
+          <p>稳定性测试使用 Profile 中最长连续状态区：{{ probeRange.length ? hex(probeRange[0].address) : '—' }}，短帧 1 / 长帧 {{ probeRange.length }} 个寄存器；长帧对照不拆组。执行期间暂停日常轮询。</p>
+          <p v-if="communicationError" class="banner error">通讯异常：{{ communicationError }}</p>
+          <p v-if="communicationStats">本次串口连接统计（模拟器不计）：读取 {{ communicationStats.transactions }} · 首次成功 {{ communicationStats.firstSuccesses }} · 重试恢复 {{ communicationStats.recovered }} · 最终失败 {{ communicationStats.failed }} · CRC {{ communicationStats.crcErrors }} · LRC {{ communicationStats.lrcErrors }} · 超时 {{ communicationStats.timeouts }} · 重试 {{ communicationStats.retries }}</p>
+          <p>状态更新：{{ statusUpdatedAt ? new Date(statusUpdatedAt).toLocaleTimeString() : '尚未读取' }} · {{ !connected ? '已断开' : !pollingEnabled ? '轮询已暂停，保留旧值' : communicationError ? '读取失败，保留旧值' : '轮询已启用' }}</p>
+          <p v-if="communicationStats">最近成功：{{ communicationStats.lastSuccessMs ? new Date(communicationStats.lastSuccessMs).toLocaleString() : '—' }}</p>
+          <details v-if="communicationStats?.lastFailure"><summary>最近失败地址与响应帧</summary><pre>{{ communicationStats.lastFailure }}</pre></details>
+          <p>{{ readProgress }} {{ testProgress }}</p>
+          <button v-if="readActive || testActive" class="secondary" :disabled="cancelRequested" @click="cancelRequested = true">{{ cancelRequested ? '正在等待当前事务结束' : '取消当前读取 / 测试' }}</button>
+          <table v-if="testResults.length">
+            <thead><tr><th>帧</th><th>已测</th><th>首次成功率</th><th>重试恢复</th><th>最终失败</th><th>累计耗时</th></tr></thead>
+            <tbody><tr v-for="row in testResults" :key="row.label"><td>{{ row.label }}（{{ protocol === 'ascii' ? 11 + row.count * 4 : 5 + row.count * 2 }} 字节）</td><td>{{ row.total }}</td><td>{{ row.total ? (100 * row.first / row.total).toFixed(1) : '—' }}%</td><td>{{ row.recovered }}</td><td>{{ row.failed }}</td><td>{{ row.elapsed }} ms</td></tr></tbody>
+          </table>
         </section>
-
+        </div>
+        <CommunicationWorkbench v-show="activePage === 'communication'" @activity="backgroundActivity = $event" />
+        <div v-show="activePage === 'audit'" class="page-stack">
         <section class="panel audit-panel">
           <div class="section-title"><span>LOG</span><h2>操作证据</h2></div>
           <div class="audit-list">
@@ -872,7 +892,8 @@ onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearT
             <p v-if="!audit.length">尚无操作记录。</p>
           </div>
         </section>
-      </section>
-    </main>
+        </div>
+      </main>
+    </div>
   </div>
 </template>

@@ -443,7 +443,7 @@ fn ascii_frame(payload: &[u8]) -> Vec<u8> {
     frame.push_str("\r\n");
     frame.into_bytes()
 }
-fn decode_ascii(frame: &[u8]) -> Result<Vec<u8>, ModbusError> {
+pub(crate) fn decode_ascii(frame: &[u8]) -> Result<Vec<u8>, ModbusError> {
     if frame.len() < 9
         || frame.len() > 513
         || frame[0] != b':'
