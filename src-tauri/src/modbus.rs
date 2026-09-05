@@ -455,7 +455,7 @@ fn decode_ascii(frame: &[u8]) -> Result<Vec<u8>, ModbusError> {
         ));
     }
     let mut bytes = Vec::new();
-    for pair in frame[1..frame.len() - 2].chunks_exact(2) {
+    for pair in frame[1..frame.len() - 2].as_chunks::<2>().0 {
         match (
             (pair[0] as char).to_digit(16),
             (pair[1] as char).to_digit(16),
