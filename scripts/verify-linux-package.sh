@@ -18,6 +18,8 @@ case "$1" in
     ;;
   arch)
     docker run --rm -v "$PWD/release-files:/packages:ro" archlinux:latest bash -euo pipefail -c '
+      pacman-key --init
+      pacman-key --populate archlinux
       pacman -Syu --noconfirm gtk3 webkit2gtk-4.1 librsvg
       cp /packages/*.AppImage /tmp/servo.AppImage
       chmod +x /tmp/servo.AppImage

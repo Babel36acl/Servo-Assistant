@@ -109,7 +109,7 @@ jobs:
           foreach ($pattern in $patterns) {
             $files = @(Get-ChildItem "src-tauri/target/release/bundle/$pattern")
             if ($files.Count -ne 1) { throw "预期一个产物：$pattern，实际 $($files.Count)" }
-            $suffix = switch ($files[0].Extension) { '.msi' { 'setup.msi' } '.exe' { 'setup.exe' } '.zip' { 'portable.zip' } '.deb' { 'package.deb' } '.rpm' { 'package.rpm' } '.AppImage' { 'AppImage' } }
+            $suffix = switch ($files[0].Extension) { '.msi' { 'setup.msi' } '.exe' { 'setup.exe' } '.zip' { 'portable.zip' } '.deb' { 'package.deb' } '.rpm' { 'package.rpm' } '.AppImage' { 'portable.AppImage' } }
             Copy-Item -LiteralPath $files[0].FullName -Destination "release-files/Servo-Assistant_${version}_$($env:PACKAGE_PLATFORM)_x64_$suffix"
           }
 
