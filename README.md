@@ -27,6 +27,16 @@ JSON Profile 导入
 
 本仓库不包含任何特定厂商的参数库、说明书摘录、品牌资源或资料链接。设备名称、参数定义及操作码应由使用者从有权使用的资料中制作并导入。项目与任何设备制造商不存在隶属、授权或背书关系。
 
+## EtherCAT 与通信录制
+
+通信工作台支持原始串口收发、模拟器事件及 EtherCAT 帧的后台录制、分卷、离线浏览和以太网 PCAPNG 导出。
+支持 PCAP/PCAPNG 导入、EtherCAT 标准 Datagram、邮箱头和显式 PDO 映射解析。
+Windows 主站通过 SOEM/Npcap 提供从站发现、PRE-OP 下的 CoE/SDO 参数配置及最多六通道监控，写入执行确认、写前比较和回读校验。
+
+Npcap 需单独安装；未安装时仍可使用 Modbus 和离线功能。主站不提供 OP/运动输出。
+详细范围、Profile 契约、录制完整性和设备验收见 [EtherCAT 与录制说明](docs/ethercat-and-recording.md)。
+SOEM 与 WinPcap SDK 头文件的许可证及修改说明见 [第三方来源](src-tauri/native/README.md)。
+
 ## 开发
 
 环境要求：Rust stable MSVC、Microsoft C++ Build Tools、WebView2、Node.js 和 pnpm。

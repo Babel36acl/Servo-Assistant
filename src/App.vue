@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { addressGroups } from "./communication";
 import { servoApi } from "./api";
+import CommunicationWorkbench from "./components/CommunicationWorkbench.vue";
 import ScopeChart, { type ScopeSeries } from "./components/ScopeChart.vue";
 import type {
   AuditEntry,
@@ -593,6 +594,7 @@ onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearT
     </div>
     <div class="banner info"><strong>当前状态</strong><span>{{ notice }}</span></div>
 
+    <CommunicationWorkbench />
     <main class="workspace">
       <aside class="sidebar">
         <section class="panel profile-panel">

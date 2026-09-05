@@ -1,0 +1,14 @@
+{
+  "mailboxes": [],
+  "pdo": [
+    {
+      "name": "虚构映射示例，请替换为实际逻辑地址",
+      "logicalAddress": 4096,
+      "bitOffset": 0,
+      "bitLength": 16,
+      "signed": true,
+      "scale": 0.1,
+      "unit": ""
+    }
+  ]
+}

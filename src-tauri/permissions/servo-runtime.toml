@@ -2,6 +2,25 @@
 identifier = "servo-runtime"
 description = "Allows the main window to use the explicitly exposed servo commissioning commands."
 commands.allow = [
+  "start_recording",
+  "stop_recording",
+  "recording_status",
+  "recording_sessions",
+  "recording_page",
+  "capture_file_page",
+  "export_recording_pcap",
+  "decode_ethercat",
+  "ethercat_adapters",
+  "ethercat_connect",
+  "ethercat_disconnect",
+  "ethercat_status",
+  "ethercat_profile",
+  "ethercat_read",
+  "ethercat_write",
+  "start_network_capture",
+  "stop_network_capture",
+  "network_capture_status",
+
   "import_profile",
   "get_active_profile",
   "list_serial_ports",

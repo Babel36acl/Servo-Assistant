@@ -233,3 +233,42 @@ fn discovery_requires_two_valid_responses_and_preserves_station_check() {
     assert!(!wrong_station.detect_slave(2, 0x1000).unwrap());
     assert!(wrong_station.detect_slave(0, 0x1000).is_err());
 }
+
+#[test]
+fn recording_covers_partial_reads_crc_retry_and_does_not_retry_writes() {
+    let root = std::env::temp_dir().join(format!(
+        "servo-serial-rec-{}",
+        crate::recording::timestamp_us()
+    ));
+    let recorder = crate::recording::Recorder::new(root.clone());
+    recorder.start(16).unwrap();
+    let good = frame(vec![1, 3, 2, 0, 42]);
+    let mut bad = good.clone();
+    bad[4] ^= 1;
+    let mut c = client(vec![bad.clone(), good.clone()]).with_recorder(recorder.clone());
+    assert_eq!(c.read_transaction(12, 1).unwrap(), [42]);
+    assert!(c.write_single_register(12, 9).is_err());
+    let status = recorder.stop().unwrap();
+    let records = crate::recording::read_page(&status.path, 0)
+        .unwrap()
+        .records;
+    let tx = records
+        .iter()
+        .filter(|r| r.direction == "tx")
+        .collect::<Vec<_>>();
+    assert_eq!(tx.len(), 3);
+    assert_eq!(tx[0].bytes[1], 3);
+    assert_eq!(tx[2].bytes[1], 6);
+    assert_ne!(tx[0].transaction, tx[1].transaction);
+    let received = records
+        .iter()
+        .filter(|r| r.direction == "rx")
+        .flat_map(|r| r.bytes.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(received, [bad, good].concat());
+    assert!(records.iter().any(|r| r.detail.contains("CRC")));
+    assert!(records
+        .iter()
+        .any(|r| r.detail.contains("discarded bytes unavailable")));
+    std::fs::remove_dir_all(root).unwrap();
+}

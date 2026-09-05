@@ -100,6 +100,8 @@ pub struct RtuClient {
     pub stats: CommunicationStats,
     pub events: Vec<(String, String)>,
     received: Vec<u8>,
+    capture_transaction: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    capture: Option<(crate::recording::Recorder, String)>,
 }
 
 impl RtuClient {
@@ -144,7 +146,27 @@ impl RtuClient {
             stats: CommunicationStats::default(),
             events: Vec::new(),
             received: Vec::new(),
+            capture_transaction: Default::default(),
+            capture: None,
         }
+    }
+
+    pub fn with_recorder(mut self, recorder: crate::recording::Recorder) -> Self {
+        let source = format!(
+            "serial:{} baud={:?} parity={:?} connection={}",
+            self.port.name().unwrap_or_default(),
+            self.port.baud_rate(),
+            self.port.parity(),
+            crate::recording::timestamp_us()
+        );
+        self.capture = Some((recorder.clone(), source.clone()));
+        self.port = Box::new(crate::recorded_port::RecordedPort {
+            port: self.port,
+            recorder,
+            transaction: self.capture_transaction.clone(),
+            source,
+        });
+        self
     }
 
     pub fn read_holding_registers(
@@ -265,6 +287,8 @@ impl RtuClient {
         function: u8,
         read_success: impl FnOnce(&mut dyn SerialPort, &[u8; 2], &mut Vec<u8>) -> Result<T, ModbusError>,
     ) -> Result<T, ModbusError> {
+        self.capture_transaction
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.wait_for_inter_frame_gap();
         self.received.clear();
         let result = (|| {
@@ -298,6 +322,24 @@ impl RtuClient {
             }
             read_success(self.port.as_mut(), &prefix, &mut self.received)
         })();
+        if let Some((recorder, source)) = &self.capture {
+            recorder.emit(
+                source,
+                "modbus-rtu",
+                "event",
+                self.capture_transaction
+                    .load(std::sync::atomic::Ordering::Relaxed),
+                &[],
+                &format!(
+                    "FC{function:02X} request={:02X?} result={:?}",
+                    request,
+                    result
+                        .as_ref()
+                        .map(|_| "success")
+                        .map_err(|e: &ModbusError| e.to_string())
+                ),
+            );
+        }
         self.last_frame_end = Some(Instant::now());
         result
     }

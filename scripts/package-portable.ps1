@@ -10,6 +10,13 @@ Copy-Item -LiteralPath $binary -Destination $staging
 Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE') -Destination $staging
 Set-Content -LiteralPath (Join-Path $staging 'portable.marker') -Value '' -NoNewline
 Set-Content -LiteralPath (Join-Path $staging '使用说明.txt') -Encoding utf8 -Value '解压到可写目录，运行 servo-assistant.exe。需要 Windows WebView2 Runtime。数据保存在同目录 data 文件夹，升级时保留 data。请自行导入与设备型号匹配的 Profile。'
+$licenses = Join-Path $staging 'licenses'
+New-Item -ItemType Directory -Path $licenses -Force | Out-Null
+Copy-Item -LiteralPath (Join-Path $projectRoot 'src-tauri/native/README.md') -Destination (Join-Path $licenses 'ethercat-native.md')
+Copy-Item -LiteralPath (Join-Path $projectRoot 'src-tauri/native/soem/LICENSE') -Destination (Join-Path $licenses 'SOEM-LICENSE.txt')
+$headers = Join-Path $licenses 'winpcap-sdk'
+New-Item -ItemType Directory -Path $headers -Force | Out-Null
+Get-ChildItem -LiteralPath (Join-Path $projectRoot 'src-tauri/native/soem/oshw/win32/wpcap/Include') | Copy-Item -Destination $headers -Recurse -Force
 $archive = Join-Path $output "Servo-Assistant_${version}_windows_x64_portable.zip"
-Compress-Archive -LiteralPath @((Join-Path $staging 'servo-assistant.exe'),(Join-Path $staging 'LICENSE'),(Join-Path $staging 'portable.marker'),(Join-Path $staging '使用说明.txt')) -DestinationPath $archive -Force
+Compress-Archive -LiteralPath @((Join-Path $staging 'servo-assistant.exe'),(Join-Path $staging 'LICENSE'),(Join-Path $staging 'portable.marker'),(Join-Path $staging '使用说明.txt'),$licenses) -DestinationPath $archive -Force
 Write-Output $archive

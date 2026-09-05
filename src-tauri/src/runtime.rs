@@ -67,7 +67,10 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(database_path: PathBuf) -> Result<Self, AuditStoreError> {
+    pub fn with_recorder(
+        database_path: PathBuf,
+        recorder: crate::recording::Recorder,
+    ) -> Result<Self, AuditStoreError> {
         Ok(Self {
             discovery: Arc::default(),
             inner: Arc::new(Mutex::new(Runtime {
@@ -75,6 +78,7 @@ impl AppState {
                 session: None,
                 audit_store: AuditStore::open(database_path)?,
                 communication: CommunicationSettings::default(),
+                recorder,
             })),
         })
     }
@@ -85,6 +89,7 @@ struct Runtime {
     session: Option<Session>,
     audit_store: AuditStore,
     communication: CommunicationSettings,
+    recorder: crate::recording::Recorder,
 }
 
 enum Session {
@@ -123,6 +128,7 @@ struct SimulatorDevice {
     eeprom: HashMap<u16, u16>,
     parameter_addresses: HashSet<u16>,
     operations: Option<OperationSet>,
+    recorder: Option<crate::recording::Recorder>,
 }
 
 impl SimulatorDevice {
@@ -155,10 +161,30 @@ impl SimulatorDevice {
             parameter_addresses,
             registers,
             operations: profile.operations.clone(),
+            recorder: None,
         })
     }
 
     fn read_registers(&self, address: u16, count: u16) -> Vec<u16> {
+        if let Some(r) = &self.recorder {
+            r.emit(
+                "simulator",
+                "simulator",
+                "event",
+                0,
+                &[],
+                &format!(
+                    "read address={address} count={count} values={:?}",
+                    (0..count)
+                        .map(|i| self
+                            .registers
+                            .get(&address.wrapping_add(i))
+                            .copied()
+                            .unwrap_or(0))
+                        .collect::<Vec<_>>()
+                ),
+            );
+        }
         (0..count)
             .map(|offset| {
                 *self
@@ -170,6 +196,16 @@ impl SimulatorDevice {
     }
 
     fn write_register(&mut self, address: u16, value: u16) {
+        if let Some(r) = &self.recorder {
+            r.emit(
+                "simulator",
+                "simulator",
+                "event",
+                0,
+                &value.to_le_bytes(),
+                &format!("write address={address} value={value}"),
+            );
+        }
         self.registers.insert(address, value);
         let Some(operations) = &self.operations else {
             return;
@@ -443,7 +479,7 @@ pub async fn discover_device(
                 client = None;
                 connection.baud_rate = baud;
                 connection.slave_id = slave;
-                client = Some((baud, open_serial_client(&connection).map_err(|error| error.to_string())?));
+                client = Some((baud, open_serial_client(&connection, &runtime.recorder).map_err(|error| error.to_string())?));
             }
             client.as_mut().unwrap().1.detect_slave(slave, address).map_err(|error| error.to_string())
         });
@@ -502,7 +538,10 @@ pub async fn list_serial_ports() -> Result<Vec<SerialPortInfo>, String> {
     .map_err(|error| RuntimeError::Task(error.to_string()).to_string())?
 }
 
-fn open_serial_client(request: &ConnectionRequest) -> Result<RtuClient, RuntimeError> {
+fn open_serial_client(
+    request: &ConnectionRequest,
+    recorder: &crate::recording::Recorder,
+) -> Result<RtuClient, RuntimeError> {
     let port_name = request
         .port_name
         .as_deref()
@@ -536,12 +575,10 @@ fn open_serial_client(request: &ConnectionRequest) -> Result<RtuClient, RuntimeE
         + 8
         + u32::from(!matches!(request.parity, ParitySetting::None))
         + request.stop_bits as u32;
-    Ok(RtuClient::new(
-        port,
-        request.slave_id,
-        request.baud_rate,
-        bits_per_char,
-    ))
+    Ok(
+        RtuClient::new(port, request.slave_id, request.baud_rate, bits_per_char)
+            .with_recorder(recorder.clone()),
+    )
 }
 
 #[tauri::command]
@@ -571,10 +608,15 @@ pub async fn connect_device(
         }
         let session = match request.mode {
             ConnectionMode::Simulator => Session::Simulator(SimulatorDevice::new(&profile)?),
-            ConnectionMode::Serial => Session::Serial(open_serial_client(&request)?),
+            ConnectionMode::Serial => {
+                Session::Serial(open_serial_client(&request, &runtime.recorder)?)
+            }
         };
         let mode = session.mode();
         runtime.session = Some(session);
+        if let Some(Session::Simulator(device)) = runtime.session.as_mut() {
+            device.recorder = Some(runtime.recorder.clone());
+        }
         if let Some(Session::Serial(client)) = runtime.session.as_mut() {
             client.settings = runtime.communication.clone();
         }

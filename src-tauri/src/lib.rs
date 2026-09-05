@@ -1,7 +1,13 @@
 mod audit;
 mod discovery;
+mod ethercat;
+mod master;
 mod modbus;
+mod network_capture;
+mod pcap_file;
 mod profile;
+mod recorded_port;
+mod recording;
 mod runtime;
 
 use runtime::{
@@ -19,10 +25,41 @@ pub fn run() {
         .setup(|app| {
             let executable = std::env::current_exe()?;
             let data_dir = portable_data_dir(&executable).unwrap_or(app.path().app_data_dir()?);
-            app.manage(AppState::new(data_dir.join("servo.db"))?);
+            let recorder = recording::Recorder::new(data_dir.join("recordings"));
+            app.manage(AppState::with_recorder(
+                data_dir.join("servo.db"),
+                recorder.clone(),
+            )?);
+            app.manage(master::Master::new(
+                recorder.clone(),
+                audit::AuditStore::open(data_dir.join("servo.db"))?,
+            ));
+            app.manage(network_capture::NetworkCapture::new(
+                data_dir.join("captures"),
+                recorder.clone(),
+            ));
+            app.manage(recorder);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            recording::start_recording,
+            recording::stop_recording,
+            recording::recording_status,
+            recording::recording_sessions,
+            recording::recording_page,
+            pcap_file::capture_file_page,
+            pcap_file::export_recording_pcap,
+            ethercat::decode_ethercat,
+            master::ethercat_adapters,
+            master::ethercat_connect,
+            master::ethercat_disconnect,
+            master::ethercat_status,
+            master::ethercat_profile,
+            master::ethercat_read,
+            master::ethercat_write,
+            network_capture::start_network_capture,
+            network_capture::stop_network_capture,
+            network_capture::network_capture_status,
             discover_device,
             cancel_discovery,
             get_discovery_status,
@@ -45,8 +82,15 @@ pub fn run() {
             read_statuses,
             get_audit_log,
         ])
-        .run(tauri::generate_context!())
-        .expect("failed to run Servo Assistant");
+        .build(tauri::generate_context!())
+        .expect("failed to build Servo Assistant")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                let _ = app.state::<network_capture::NetworkCapture>().stop();
+                app.state::<master::Master>().close();
+                let _ = app.state::<recording::Recorder>().stop();
+            }
+        });
 }
 
 fn portable_data_dir(executable: &std::path::Path) -> Option<std::path::PathBuf> {

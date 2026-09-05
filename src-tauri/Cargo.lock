@@ -2907,6 +2907,7 @@ dependencies = [
 name = "servo-assistant"
 version = "0.3.2"
 dependencies = [
+ "cc",
  "rusqlite",
  "serde",
  "serde_json",
