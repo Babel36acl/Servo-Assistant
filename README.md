@@ -1,5 +1,7 @@
 # 伺服参数调试器
 
+[![CI](https://github.com/AKCX2002/Servo-Assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/AKCX2002/Servo-Assistant/actions/workflows/ci.yml)
+
 一个设备中立的 Tauri 2 GUI 调试器。程序不内置厂商、型号、参数表或手册内容；设备兼容性完全由用户导入的 JSON Profile 描述。
 
 ```text
@@ -63,6 +65,22 @@ cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 ## 验证边界
 
 自动化测试和模拟器只能验证软件契约。每份设备 Profile 仍需针对其目标设备分别完成读取、缩放、写入、回读、应用和持久化验收；未定义或未实测的设备能力不能视为已兼容。
+
+## 自动构建与发布
+
+- 推送到 `main`、提交 Pull Request 或手动运行 `CI` 工作流时，会在 Windows runner 上执行前端构建、Rust 测试、Clippy 检查和 Tauri 安装包构建。MSI/NSIS 制品可从对应的 Actions 运行记录下载。
+- 推送格式为 `v<SemVer>` 的标签时，`Release` 工作流会先核对 `package.json`、`src-tauri/tauri.conf.json` 和 `src-tauri/Cargo.toml` 的版本，再构建 Windows 安装包并发布 GitHub Release。
+
+发布 `0.1.0` 的示例：
+
+```powershell
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+如果三个项目版本与标签不一致，发布会在生成 Release 前失败，不会留下半成品发布。
+
+当前流水线未配置 Windows 代码签名证书，安装包能够正常构建，但从浏览器下载后可能触发 SmartScreen 提示。
 
 ## 许可证
 
