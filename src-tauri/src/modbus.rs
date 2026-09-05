@@ -71,8 +71,10 @@ impl RtuClient {
             response.extend_from_slice(&tail);
             verify_crc(&response)?;
             Ok(response[3..3 + byte_count]
-                .chunks_exact(2)
-                .map(|bytes| u16::from_be_bytes([bytes[0], bytes[1]]))
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|bytes| u16::from_be_bytes(*bytes))
                 .collect())
         })
     }
