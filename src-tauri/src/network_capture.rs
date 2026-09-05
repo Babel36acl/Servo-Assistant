@@ -97,18 +97,26 @@ impl NetworkCapture {
                 &status,
                 ready_tx,
             );
-            let mut s = status.lock().unwrap_or_else(|e| e.into_inner());
-            s.active = false;
-            if let Err(e) = result {
-                s.error = Some(e);
-            }
-            if let Ok(bytes) = serde_json::to_vec_pretty(&*s) {
-                let _ = std::fs::write(directory.join("summary.json"), bytes);
-            }
+            finish_capture(&status, &directory, result);
         });
         *slot = Some(Run { stop, worker });
         ready_rx.recv().map_err(|_| "捕获线程无法启动")??;
         Ok(self.status())
+    }
+}
+fn finish_capture(
+    status: &Mutex<CaptureStatus>,
+    directory: &std::path::Path,
+    result: Result<(), String>,
+) {
+    let mut s = status.lock().unwrap_or_else(|e| e.into_inner());
+    s.active = false;
+    if let Err(e) = result {
+        s.error = Some(e);
+    }
+    if let Err(e) = crate::recording_library::save_json(&directory.join("summary.json"), &*s) {
+        let previous = s.error.take().unwrap_or_default();
+        s.error = Some(format!("{previous} 摘要落盘失败：{e}；不能确认捕获完整性"));
     }
 }
 #[allow(clippy::too_many_arguments)]
@@ -258,6 +266,24 @@ pub fn network_capture_status(state: State<'_, NetworkCapture>) -> CaptureStatus
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn failed_capture_summary_preserves_original_error() {
+        let root = std::env::temp_dir().join(format!(
+            "servo-capture-summary-{}",
+            crate::recording::timestamp_us()
+        ));
+        std::fs::create_dir_all(root.join("summary.json")).unwrap();
+        let status = Mutex::new(CaptureStatus {
+            active: true,
+            ..Default::default()
+        });
+        finish_capture(&status, &root, Err("driver failed".into()));
+        let status = status.lock().unwrap();
+        assert!(!status.active);
+        let error = status.error.as_ref().unwrap();
+        assert!(error.contains("driver failed") && error.contains("摘要落盘失败"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn vlan_filter() {
         assert!(is_ethercat(&[

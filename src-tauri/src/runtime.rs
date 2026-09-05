@@ -73,6 +73,12 @@ impl AppState {
         database_path: PathBuf,
         recorder: crate::recording::Recorder,
     ) -> Result<Self, AuditStoreError> {
+        recorder.set_context("profile", serde_json::Value::Null);
+        recorder.set_context("connection", serde_json::Value::Null);
+        recorder.set_context(
+            "communication",
+            serde_json::json!(CommunicationSettings::default()),
+        );
         Ok(Self {
             discovery: Arc::default(),
             inner: Arc::new(Mutex::new(Runtime {
@@ -246,7 +252,7 @@ pub enum ConnectionMode {
     Serial,
 }
 
-#[derive(Debug, Default, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ConnectionPreset {
     #[default]
@@ -282,7 +288,7 @@ impl ConnectionRequest {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectionRequest {
     #[serde(default)]
@@ -410,7 +416,7 @@ pub struct BatchWriteResult {
 
 type PlannedWrite = (ParameterDefinition, u16, u16);
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StatusValue {
     pub id: String,
@@ -555,6 +561,9 @@ pub async fn import_profile(
         let profile = ServoProfile::from_json(&profile_json)?;
         let summary = profile_summary(&profile);
         runtime.profile = Some(profile);
+        runtime
+            .recorder
+            .set_context("profile", serde_json::json!(runtime.profile));
         runtime.push_audit("profile.import", "success", &summary.device_name)?;
         Ok(summary)
     })
@@ -651,6 +660,9 @@ pub async fn connect_device(
             }
         };
         let mode = session.mode();
+        runtime
+            .recorder
+            .set_context("connection", serde_json::json!(request));
         runtime.session = Some(session);
         if let Some(Session::Simulator(device)) = runtime.session.as_mut() {
             device.recorder = Some(runtime.recorder.clone());
@@ -676,6 +688,9 @@ pub async fn connect_device(
 pub async fn disconnect_device(state: State<'_, AppState>) -> Result<ConnectionStatus, String> {
     with_runtime(state, |runtime| {
         runtime.session = None;
+        runtime
+            .recorder
+            .set_context("connection", serde_json::Value::Null);
         runtime.push_audit("connection.close", "success", "用户主动断开")?;
         Ok(connection_status(runtime))
     })
@@ -724,6 +739,9 @@ pub async fn configure_communication(
             client.settings = settings.clone();
         }
         runtime.communication = settings;
+        runtime
+            .recorder
+            .set_context("communication", serde_json::json!(runtime.communication));
         Ok(())
     })
     .await
@@ -1217,7 +1235,19 @@ pub async fn read_statuses(state: State<'_, AppState>) -> Result<Vec<StatusValue
             .statuses
             .clone();
         let session = runtime.session.as_mut().ok_or(RuntimeError::NotConnected)?;
-        read_status_definitions(session, statuses)
+        let simulator = session.mode() == ConnectionMode::Simulator;
+        let values = read_status_definitions(session, statuses)?;
+        if simulator {
+            runtime.recorder.emit(
+                "simulator",
+                "status-sample",
+                "event",
+                0,
+                &[],
+                &serde_json::json!(values).to_string(),
+            );
+        }
+        Ok(values)
     })
     .await
 }

@@ -1,8 +1,8 @@
 //! Offline decoding only: no transport calls and no inferred bytes from event text.
 use crate::{modbus, recording::Record};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Default, Serialize)]
+#[derive(Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Frame {
     pub hex: String,
@@ -15,7 +15,7 @@ pub struct Frame {
     pub exception: Option<String>,
     pub error: Option<String>,
 }
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Transaction {
     pub source: String,
@@ -119,8 +119,10 @@ fn frame(bytes: &[u8], protocol: &str, request: bool) -> Frame {
         {
             f.count = Some(p[2] as u16 / 2);
             f.values = p[3..]
-                .chunks_exact(2)
-                .map(|b| u16::from_be_bytes([b[0], b[1]]))
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|b| u16::from_be_bytes(*b))
                 .collect();
         }
         (3 | 6, _) => f.error = Some("FC03 / FC06 帧长度或字节数无效".into()),

@@ -7,7 +7,7 @@ const require = createRequire(import.meta.url), ts = require('typescript'), vue 
 function fixture(invoke) {
   const script = readFileSync(new URL('../src/components/CommunicationWorkbench.vue', import.meta.url), 'utf8').split('<script setup lang="ts">')[1].split('</script>')[0];
   const module = { exports: {} }, timers = new Map(); let id = 0, unmount;
-  const source = script + '\nexport { page, path, fileMode, query, direction, rows, visible, total, pageBusy, browseError, follow, toggleFollow, details, selected, decoded, modbusDetail, tick, start, stop };';
+  const source = script + '\nexport { page, path, fileMode, query, direction, rows, visible, total, pageBusy, browseError, follow, toggleFollow, details, selected, decoded, modbusDetail, tick, start, stop, slaveFilter, functionFilter, addressFilter, outcomeFilter, triggerEnabled, preSeconds, postSeconds, triggerKeyword, locatePoint };';
   vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText, {
     module, exports: module.exports, defineEmits: () => () => {},
     require: name => name === 'vue' ? { ...vue, onMounted() {}, onUnmounted(fn) { unmount = fn; } } : name === '@tauri-apps/api/core' ? { invoke } : {},
@@ -58,4 +58,32 @@ test('follow failures are visible and stop polling; disposal ignores late replie
   let finish; const g = fixture(async () => new Promise(resolve => { finish = resolve; }));
   g.app.path.value = 'session'; await vue.nextTick(); const pending = g.app.page(0); g.unmount(); finish(page([row(1)])); await pending;
   assert.equal(g.app.rows.value.length, 0);
+});
+
+test('PCAP uses the global index and structured numeric filters validate before IPC', async () => {
+  const calls=[];
+  const { app }=fixture(async(cmd,args)=>{ calls.push({cmd,args}); return page([row(250,'ethernet')]); });
+  app.path.value='captures'; app.fileMode.value=true; app.query.value='01 03'; await vue.nextTick();
+  await app.page(0); assert.equal(calls[0].cmd,'recording_page'); assert.equal(calls[0].args.filter.query,'01 03');
+  app.fileMode.value=false; app.slaveFilter.value='1'; app.functionFilter.value='0x03'; app.addressFilter.value='0x10'; app.outcomeFilter.value='failure'; await vue.nextTick();
+  await app.page(0); assert.equal(calls[1].args.filter.address,16); assert.equal(calls[1].args.filter.function,3); assert.equal(calls[1].args.filter.outcome,'failure');
+  app.slaveFilter.value='invalid'; await vue.nextTick(); await app.page(0); assert.equal(calls.length,2); assert.match(app.browseError.value,/筛选数值/);
+});
+
+test('start snapshots mapping and sends the configured trigger before following', async () => {
+  const calls=[], status={active:true,path:'new-session',accepted:0,written:0};
+  const {app}=fixture(async(cmd,args)=>{calls.push({cmd,args}); if(cmd==='recording_sessions')return ['new-session']; if(cmd==='recording_page')return page([]); if(cmd==='network_capture_status')return {active:false}; return status;});
+  app.triggerEnabled.value=true; app.preSeconds.value=20; app.postSeconds.value=5; app.triggerKeyword.value='timeout'; await app.start();
+  assert.equal(calls[0].cmd,'recording_mapping'); assert.equal(calls[1].cmd,'start_recording');
+  assert.equal(calls[1].args.trigger.preSeconds,20); assert.equal(calls[1].args.trigger.postSeconds,5); assert.equal(calls[1].args.trigger.keyword,'timeout');
+  assert.equal(app.path.value,'new-session'); assert.equal(app.follow.value,true);
+});
+
+test('history point locates its raw record independently of active text filters', async()=>{
+  const calls=[];
+  const {app}=fixture(async(cmd,args)=>{calls.push({cmd,args}); if(cmd==='recording_page')return page([row(250)]); return {outcome:'matched'};});
+  app.path.value='session'; app.query.value='would hide row'; await vue.nextTick();
+  await app.locatePoint(row(250));
+  assert.equal(calls[0].args.filter.sequence,250); assert.equal(calls[0].args.filter.query,undefined);
+  assert.equal(calls[1].cmd,'recording_modbus_transaction'); assert.equal(app.selected.value.sequence,250); assert.equal(app.follow.value,false);
 });

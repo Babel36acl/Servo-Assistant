@@ -37,6 +37,19 @@ pub struct RecordingStatus {
     pub unwritten: u64,
     pub bytes: u64,
     pub error: Option<String>,
+    #[serde(default)]
+    pub armed: bool,
+    #[serde(default)]
+    pub discarded: u64,
+    #[serde(default)]
+    pub triggered_at_us: Option<u64>,
+}
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TriggerConfig {
+    pub pre_seconds: u64,
+    pub post_seconds: u64,
+    pub keyword: String,
 }
 struct Run {
     sender: SyncSender<Record>,
@@ -49,6 +62,7 @@ pub struct Recorder {
     transition: Arc<Mutex<()>>,
     status: Arc<Mutex<RecordingStatus>>,
     root: PathBuf,
+    context: Arc<Mutex<serde_json::Value>>,
 }
 pub fn timestamp_us() -> u64 {
     SystemTime::now()
@@ -63,6 +77,9 @@ impl Recorder {
             transition: Arc::default(),
             status: Arc::default(),
             root,
+            context: Arc::new(Mutex::new(
+                serde_json::json!({"applicationVersion":env!("CARGO_PKG_VERSION")}),
+            )),
         }
     }
     pub fn status(&self) -> RecordingStatus {
@@ -71,26 +88,70 @@ impl Recorder {
             .unwrap_or_else(|e| e.into_inner())
             .clone()
     }
+    #[cfg(test)]
     pub fn start(&self, limit_mb: u64) -> Result<RecordingStatus, String> {
+        self.start_configured(limit_mb, None)
+    }
+    pub fn start_configured(
+        &self,
+        limit_mb: u64,
+        trigger: Option<TriggerConfig>,
+    ) -> Result<RecordingStatus, String> {
         if !(16..=16384).contains(&limit_mb) {
             return Err("录制容量须为 16～16384 MiB".into());
         }
-        self.start_with_limits(limit_mb * 1024 * 1024, 16 * 1024 * 1024)
+        if trigger.as_ref().is_some_and(|t| {
+            t.pre_seconds > 300
+                || t.post_seconds == 0
+                || t.post_seconds > 300
+                || t.keyword.len() > 256
+        }) {
+            return Err("触发窗口须为前 0～300 秒、后 1～300 秒，关键词不超过 256 字节".into());
+        }
+        self.start_run(limit_mb * 1024 * 1024, 16 * 1024 * 1024, trigger)
     }
+    #[cfg(test)]
     fn start_with_limits(
         &self,
         limit_bytes: u64,
         part_limit: u64,
     ) -> Result<RecordingStatus, String> {
+        self.start_run(limit_bytes, part_limit, None)
+    }
+    pub fn context(&self) -> serde_json::Value {
+        self.context
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+    pub fn set_context(&self, key: &str, value: serde_json::Value) {
+        let mut context = self.context.lock().unwrap_or_else(|e| e.into_inner());
+        context[key] = value;
+        let detail = context.to_string();
+        drop(context);
+        self.emit("application", "recording-context", "event", 0, &[], &detail);
+    }
+    fn start_run(
+        &self,
+        limit_bytes: u64,
+        part_limit: u64,
+        trigger: Option<TriggerConfig>,
+    ) -> Result<RecordingStatus, String> {
         let _transition = self.transition.lock().map_err(|_| "录制生命周期锁损坏")?;
         let mut slot = self.run.lock().map_err(|_| "录制锁损坏")?;
         if slot.is_some() {
-            return Err("请先停止上一录制会话".into());
+            if self.status().active {
+                return Err("请先停止上一录制会话".into());
+            }
+            if let Some(previous) = slot.take() {
+                drop(previous.sender);
+                previous.worker.join().map_err(|_| "上一录制线程异常退出")?;
+            }
         }
         fs::create_dir_all(&self.root).map_err(|e| e.to_string())?;
         let path = self.root.join(format!("session-{}", timestamp_us()));
         fs::create_dir(&path).map_err(|e| e.to_string())?;
-        let metadata = serde_json::json!({"format":"servo-recording", "version":1, "timestampUnit":"microseconds", "limitMiB":limit_bytes / (1024 * 1024),
+        let metadata = serde_json::json!({"format":"servo-recording", "version":1, "startedAtUs":timestamp_us(), "context": self.context(), "trigger": trigger, "timestampUnit":"microseconds", "limitMiB":limit_bytes / (1024 * 1024),
             "scope":"application I/O and explicitly selected network capture; cleared/unobserved bytes cannot be recovered"});
         fs::write(path.join("session.json"), metadata.to_string()).map_err(|e| e.to_string())?;
         let file = OpenOptions::new()
@@ -101,12 +162,13 @@ impl Recorder {
         let (sender, receiver) = mpsc::sync_channel::<Record>(4096);
         *self.status.lock().map_err(|_| "录制状态锁损坏")? = RecordingStatus {
             active: true,
+            armed: trigger.is_some(),
             path: path.to_string_lossy().into(),
             ..Default::default()
         };
         let status = self.status.clone();
         let worker = std::thread::spawn(move || {
-            let result = write_records(
+            let result = write_records_mode(
                 receiver,
                 &status,
                 BufWriter::new(file),
@@ -119,6 +181,7 @@ impl Recorder {
                         .open(path.join(format!("records-{part:04}.jsonl")))
                         .map(BufWriter::new)
                 },
+                trigger,
             );
             finish_recording(&status, &path, result);
         });
@@ -221,19 +284,37 @@ impl RecordOutput for BufWriter<File> {
     }
 }
 
+#[cfg(test)]
 fn write_records<W: RecordOutput>(
+    receiver: mpsc::Receiver<Record>,
+    status: &Mutex<RecordingStatus>,
+    writer: W,
+    limit: u64,
+    part_limit: u64,
+    open: impl FnMut(u64) -> std::io::Result<W>,
+) -> Result<(), String> {
+    write_records_mode(receiver, status, writer, limit, part_limit, open, None)
+}
+fn write_records_mode<W: RecordOutput>(
     receiver: mpsc::Receiver<Record>,
     status: &Mutex<RecordingStatus>,
     mut writer: W,
     limit: u64,
     part_limit: u64,
     mut open: impl FnMut(u64) -> std::io::Result<W>,
+    trigger: Option<TriggerConfig>,
 ) -> Result<(), String> {
     let mut total = 0_u64;
     let mut part_bytes = 0_u64;
     let mut part = 1;
     let mut pending = 0_u64;
     let mut flushed_at = Instant::now();
+    let mut ring = std::collections::VecDeque::<Record>::new();
+    let mut ring_bytes = 0_usize;
+    let mut deadline = None;
+    let mut end_elapsed = None;
+    let mut finishing = false;
+    let mut draining = false;
     let flush = |writer: &mut W, pending: &mut u64| -> Result<(), String> {
         writer.flush().map_err(|e| e.to_string())?;
         status.lock().map_err(|_| "录制状态锁损坏")?.written += *pending;
@@ -241,7 +322,31 @@ fn write_records<W: RecordOutput>(
         Ok(())
     };
     loop {
-        let record = match receiver.recv_timeout(std::time::Duration::from_millis(250)) {
+        if finishing && ring.is_empty() {
+            break;
+        }
+        if deadline.is_some_and(|end| Instant::now() >= end) && !draining && !finishing {
+            let mut s = status.lock().map_err(|_| "录制状态锁损坏")?;
+            s.active = false;
+            for r in receiver.try_iter() {
+                if end_elapsed.is_some_and(|end| r.elapsed_us <= end) {
+                    ring.push_back(r);
+                } else {
+                    s.discarded += 1;
+                }
+            }
+            finishing = true;
+            draining = true;
+            continue;
+        }
+        let queued = if draining { ring.pop_front() } else { None };
+        if draining && queued.is_none() {
+            draining = false;
+        }
+        let record = match queued
+            .map(Ok)
+            .unwrap_or_else(|| receiver.recv_timeout(std::time::Duration::from_millis(250)))
+        {
             Ok(r) => r,
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 flush(&mut writer, &mut pending)?;
@@ -250,8 +355,54 @@ fn write_records<W: RecordOutput>(
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         };
+        if let Some(t) = trigger
+            .as_ref()
+            .filter(|_| deadline.is_none() && record.protocol != "recording-context")
+        {
+            let fault = if t.keyword.is_empty() {
+                record.direction == "event"
+                    && (record.detail.contains("result=Err(")
+                        || record.detail.contains("device-fault"))
+            } else {
+                record
+                    .detail
+                    .to_lowercase()
+                    .contains(&t.keyword.to_lowercase())
+            };
+            let size = record.bytes.len() + record.detail.len() + record.source.len() + 256;
+            while ring.front().is_some_and(|r| {
+                record.elapsed_us.saturating_sub(r.elapsed_us) > t.pre_seconds * 1_000_000
+                    || ring_bytes + size > 16 * 1024 * 1024
+            }) {
+                let old = ring.pop_front().unwrap();
+                ring_bytes = ring_bytes
+                    .saturating_sub(old.bytes.len() + old.detail.len() + old.source.len() + 256);
+                status.lock().map_err(|_| "录制状态锁损坏")?.discarded += 1;
+            }
+            ring_bytes += size;
+            let stamp = record.timestamp_us;
+            ring.push_back(record);
+            if fault {
+                deadline = Some(Instant::now() + std::time::Duration::from_secs(t.post_seconds));
+                end_elapsed = ring
+                    .back()
+                    .map(|r| r.elapsed_us + t.post_seconds * 1_000_000);
+                draining = true;
+                let mut s = status.lock().map_err(|_| "录制状态锁损坏")?;
+                s.armed = false;
+                s.triggered_at_us = Some(stamp);
+            }
+            continue;
+        }
+        if end_elapsed.is_some_and(|end| record.elapsed_us > end) {
+            status.lock().map_err(|_| "录制状态锁损坏")?.discarded += 1;
+            continue;
+        }
         let mut line = serde_json::to_vec(&record).map_err(|e| e.to_string())?;
         line.push(b'\n');
+        if line.len() > 1024 * 1024 {
+            return Err("单条录制记录超过 1 MiB，录制已停止；该条及后续记录未保存".into());
+        }
         if total + line.len() as u64 > limit {
             flush(&mut writer, &mut pending)?;
             writer.sync().map_err(|e| e.to_string())?;
@@ -274,6 +425,7 @@ fn write_records<W: RecordOutput>(
             flushed_at = Instant::now();
         }
     }
+    status.lock().map_err(|_| "录制状态锁损坏")?.discarded += ring.len() as u64;
     flush(&mut writer, &mut pending)?;
     writer.sync().map_err(|e| e.to_string())
 }
@@ -285,10 +437,13 @@ fn finish_recording(
 ) {
     let mut s = status.lock().unwrap_or_else(|e| e.into_inner());
     s.active = false;
+    s.armed = false;
     if let Err(e) = result {
         s.error = Some(e);
     }
-    s.unwritten = s.accepted.saturating_sub(s.written);
+    s.unwritten = s
+        .accepted
+        .saturating_sub(s.written.saturating_add(s.discarded));
     let summary = s.clone();
     drop(s);
     let save = || -> Result<(), String> {
@@ -326,8 +481,10 @@ pub fn session_warning(path: &std::path::Path) -> Option<String> {
         None => Some("会话仍在录制、摘要损坏或异常退出，未完成落盘确认".into()),
         Some(s)
             if s.active
-                || s.written > s.accepted
-                || s.unwritten != s.accepted.saturating_sub(s.written) =>
+                || s.written > s.accepted.saturating_sub(s.discarded)
+                || s.unwritten
+                    != s.accepted
+                        .saturating_sub(s.written.saturating_add(s.discarded)) =>
         {
             Some("录制摘要计数或结束状态无效，不能确认完整性".into())
         }
@@ -417,9 +574,13 @@ pub fn visit_records(
 #[tauri::command]
 pub async fn start_recording(
     limit_mb: u64,
+    trigger: Option<TriggerConfig>,
     state: State<'_, Recorder>,
 ) -> Result<RecordingStatus, String> {
-    state.start(limit_mb)
+    let recorder = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || recorder.start_configured(limit_mb, trigger))
+        .await
+        .map_err(|e| e.to_string())?
 }
 #[tauri::command]
 pub async fn stop_recording(state: State<'_, Recorder>) -> Result<RecordingStatus, String> {
@@ -439,6 +600,131 @@ pub fn recording_sessions(state: State<'_, Recorder>) -> Result<Vec<String>, Str
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[ignore = "entry point used only by the subprocess crash recovery test"]
+    fn crash_writer_child() {
+        let root = PathBuf::from(
+            std::env::var_os("SERVO_RECORDING_CRASH_TEST_ROOT").expect("subprocess test root"),
+        );
+        let recorder = Recorder::new(root.clone());
+        recorder.start(16).unwrap();
+        for _ in 0..400 {
+            recorder.emit(
+                "crash-test",
+                "raw",
+                "rx",
+                0,
+                &[1, 2, 3],
+                "persist before forced exit",
+            );
+        }
+        while recorder.status().written < 400 {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        fs::write(root.join("ready"), recorder.status().path).unwrap();
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            recorder.emit("crash-test", "raw", "rx", 0, &[4], "running");
+        }
+    }
+    #[test]
+    fn forcibly_terminated_process_recovers_complete_records_without_summary() {
+        let root = std::env::temp_dir().join(format!("servo-process-crash-{}", timestamp_us()));
+        fs::create_dir_all(&root).unwrap();
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--ignored",
+                "--exact",
+                "recording::tests::crash_writer_child",
+                "--nocapture",
+            ])
+            .env("SERVO_RECORDING_CRASH_TEST_ROOT", &root)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let deadline = Instant::now() + std::time::Duration::from_secs(10);
+        while !root.join("ready").exists() && Instant::now() < deadline {
+            if child.try_wait().unwrap().is_some() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let ready = root.join("ready").is_file();
+        let _ = child.kill();
+        child.wait().unwrap();
+        assert!(ready, "writer child did not flush its initial records");
+        let session = fs::read_to_string(root.join("ready")).unwrap();
+        assert!(!PathBuf::from(&session).join("summary.json").exists());
+        let index = crate::recording_index::RecordingIndex::new(root.join("indexes"));
+        let page = index.page(&session, 0, &Default::default(), false).unwrap();
+        assert!(page.total >= 400);
+        assert!(page.warning.is_some());
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn trigger_evicts_old_records_keeps_context_and_stops_without_new_traffic() {
+        let root = std::env::temp_dir().join(format!("servo-trigger-{}", timestamp_us()));
+        let recorder = Recorder::new(root.clone());
+        recorder
+            .start_configured(
+                16,
+                Some(TriggerConfig {
+                    pre_seconds: 0,
+                    post_seconds: 1,
+                    keyword: String::new(),
+                }),
+            )
+            .unwrap();
+        recorder.emit("port", "raw", "rx", 0, &[1], "before");
+        recorder.set_context("profile", serde_json::json!({"name":"changed while armed"}));
+        recorder.emit(
+            "port",
+            "raw",
+            "event",
+            1,
+            &[],
+            "FC03 request=[] result=Err(Timeout)",
+        );
+        recorder.emit("port", "raw", "rx", 2, &[2], "after");
+        let limit = Instant::now() + std::time::Duration::from_secs(4);
+        while recorder.status().active && Instant::now() < limit {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let status = recorder.stop().unwrap();
+        assert!(!status.active);
+        assert!(!status.armed);
+        assert!(status.triggered_at_us.is_some());
+        assert_eq!(status.discarded, 1);
+        assert_eq!(status.unwritten, 0);
+        assert!(status.error.is_none());
+        let mut records = Vec::new();
+        visit_records(&status.path, |r| {
+            records.push(r);
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(records.len(), 3);
+        assert!(records.iter().any(|r| r.protocol == "recording-context"));
+        assert!(records.iter().any(|r| r.detail == "after"));
+        assert!(!records.iter().any(|r| r.detail == "before"));
+        recorder
+            .start_configured(
+                16,
+                Some(TriggerConfig {
+                    pre_seconds: 30,
+                    post_seconds: 1,
+                    keyword: "never".into(),
+                }),
+            )
+            .unwrap();
+        recorder.emit("port", "raw", "rx", 0, &[3], "normal");
+        let stopped = recorder.stop().unwrap();
+        assert_eq!(stopped.discarded, 1);
+        assert_eq!(stopped.unwritten, 0);
+        assert_eq!(stopped.written, 0);
+        std::fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn persists_unknown_protocol_and_recovers_partial_tail() {
         let root = std::env::temp_dir().join(format!("servo-rec-{}", timestamp_us()));

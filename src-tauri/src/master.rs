@@ -144,6 +144,11 @@ pub struct Master {
 }
 impl Master {
     pub fn new(recorder: Recorder, audit: AuditStore) -> Self {
+        recorder.set_context("ethercatProfile", serde_json::Value::Null);
+        recorder.set_context(
+            "ethercatConnection",
+            serde_json::json!(MasterStatus::default()),
+        );
         Self {
             inner: Arc::new(Mutex::new(Inner {
                 status: MasterStatus::default(),
@@ -160,6 +165,8 @@ impl Master {
                 unsafe { native::sa_close() };
             }
             inner.status = MasterStatus::default();
+            self.recorder
+                .set_context("ethercatConnection", serde_json::json!(inner.status));
         }
     }
     fn log(&self, status: &str, detail: &str) {
@@ -246,6 +253,9 @@ pub async fn ethercat_connect(
                 slaves,
                 driver_dropped: None,
             };
+            master
+                .recorder
+                .set_context("ethercatConnection", serde_json::json!(inner.status));
             master.log(
                 "success",
                 "master opened; requested PRE-OP; no PDO outputs or OP transition",
@@ -297,6 +307,9 @@ pub fn ethercat_profile(
 ) -> Result<MasterProfile, String> {
     profile.validate()?;
     state.inner.lock().map_err(|_| "主站锁损坏")?.profile = Some(profile.clone());
+    state
+        .recorder
+        .set_context("ethercatProfile", serde_json::json!(profile));
     Ok(profile)
 }
 fn selected(inner: &Inner, slave: u16, id: &str) -> Result<Object, String> {

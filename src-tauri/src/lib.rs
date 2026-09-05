@@ -1,4 +1,5 @@
 mod audit;
+mod capture_index;
 mod discovery;
 mod ethercat;
 mod master;
@@ -9,7 +10,9 @@ mod pcap_file;
 mod profile;
 mod recorded_port;
 mod recording;
+mod recording_analysis;
 mod recording_index;
+mod recording_library;
 mod runtime;
 
 use runtime::{
@@ -53,6 +56,13 @@ pub fn run() {
             recording::recording_sessions,
             recording_index::recording_page,
             recording_index::recording_modbus_transaction,
+            recording_index::recording_overview,
+            recording_index::recording_context,
+            recording_index::recording_history,
+            recording_library::recording_info,
+            recording_library::recording_annotate,
+            recording_library::recording_mapping,
+            recording_library::recording_browse,
             pcap_file::capture_file_page,
             pcap_file::export_recording_pcap,
             ethercat::decode_ethercat,
