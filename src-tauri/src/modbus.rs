@@ -103,6 +103,31 @@ pub struct RtuClient {
 }
 
 impl RtuClient {
+    pub fn set_slave_id(&mut self, slave: u8) {
+        self.slave_id = slave;
+    }
+
+    pub fn detect_slave(&mut self, slave: u8, address: u16) -> Result<bool, ModbusError> {
+        if !(1..=247).contains(&slave) {
+            return Err(ModbusError::InvalidResponse("站号必须为 1..247".into()));
+        }
+        self.set_slave_id(slave);
+        // Probe without retries or normal-operation statistics. Two valid responses are required.
+        for _ in 0..2 {
+            match self.read_once(address, 1) {
+                Ok(_) => {}
+                Err(ModbusError::Io(error))
+                    if error.kind() != std::io::ErrorKind::TimedOut
+                        && error.kind() != std::io::ErrorKind::UnexpectedEof =>
+                {
+                    return Err(error.into())
+                }
+                Err(error @ ModbusError::Serial(_)) => return Err(error),
+                Err(_) => return Ok(false),
+            }
+        }
+        Ok(true)
+    }
     pub fn new(
         port: Box<dyn SerialPort>,
         slave_id: u8,

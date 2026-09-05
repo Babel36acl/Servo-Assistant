@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   AuditEntry,
   CommunicationStats,
+  DiscoveryStatus,
   ProbeResult,
   BatchWriteResult,
   ConnectionMode,
@@ -18,6 +19,12 @@ import type {
 } from "./types";
 
 export const servoApi = {
+  discover(request: {
+    connection: { mode: ConnectionMode; portName: string; slaveId: number; baudRate: number; parity: Parity; stopBits: number; timeoutMs: number };
+    startSlave: number; endSlave: number;
+  }) { return invoke<DiscoveryStatus>("discover_device", { request }); },
+  discoveryStatus() { return invoke<DiscoveryStatus>("get_discovery_status"); },
+  cancelDiscovery() { return invoke<void>("cancel_discovery"); },
   configureCommunication(settings: { retries: number; maxRegisters: number }) {
     return invoke<void>("configure_communication", { settings });
   },

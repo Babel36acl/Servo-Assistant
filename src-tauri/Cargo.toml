@@ -1,6 +1,6 @@
 [package]
 name = "servo-assistant"
-version = "0.2.0"
+version = "0.3.0"
 description = "Device-neutral servo parameter commissioning assistant"
 authors = ["Servo Assistant contributors"]
 license = "GPL-3.0-only"

@@ -64,7 +64,19 @@ cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 
 ## 验证边界
 
-### 通讯与采集
+### 自动查找
+
+导入对应设备 Profile，选择串口、校验位和停止位，保持断开状态后点击“自动查找”。先尝试当前站号和波特率，再遍历指定的站号范围（默认 1～247）及 Profile 允许的波特率。每个组合只读取一个已定义寄存器，连续两次有效响应后回填站号和波特率；点击“连接”后才开始常规读取。
+
+查找不修改设备配置、不发送广播，支持取消并释放串口。默认探测超时为 200 ms；慢设备可增大到 2000 ms。查找期间不能连接或修改 Profile。未找到不代表设备不存在，还需核对校验位、停止位、Profile 地址和接线。
+
+### 便携版与 Linux
+
+Windows 便携 ZIP 解压后运行 `servo-assistant.exe`，需要 WebView2 Runtime；随包的 `portable.marker` 使数据保存在程序旁的 `data` 文件夹，升级时保留该目录。安装版继续使用系统应用数据目录。
+
+Linux x64 在 Ubuntu 22.04 构建：Debian 12 及以上使用 DEB，Fedora 使用 RPM，Arch Linux 使用 AppImage。发布流程在 Debian 12、Fedora 和 Arch 容器中检查安装与动态库依赖；桌面显示和真实串口仍需目标系统验证。串口使用前需确保当前用户有目标设备节点的读写权限。Linux 依赖参见 [Tauri 官方说明](https://v2.tauri.app/start/prerequisites/#linux)。
+
+### 读取与采集行为
 
 - 通讯设置在当前应用会话内生效：默认每组最多 16 个寄存器（1～100），CRC / 超时额外重试 2 次（0～3）。仅 FC03 读取可重试，FC06 写入不会自动重发；设备异常响应、错误站号和格式错误直接返回诊断。
 - 参数读取逐组显示进度，成功组即时更新，失败或取消时保留旧值并标记过期；可以只重读失败 / 未完成组。刷新保留未提交编辑；过期值须重新读取后才能单项写入。
@@ -78,7 +90,7 @@ cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 ## 自动构建与发布
 
 - 推送到 `main`、提交 Pull Request 或手动运行 `CI` 工作流时，会在 Windows runner 上执行前端构建、Rust 测试、Clippy 检查和 Tauri 安装包构建。MSI/NSIS 制品可从对应的 Actions 运行记录下载。
-- 推送格式为 `v<SemVer>` 的标签时，`Release` 工作流会先核对 `package.json`、`src-tauri/tauri.conf.json` 和 `src-tauri/Cargo.toml` 的版本，再构建 Windows 安装包并发布 GitHub Release。
+- 推送格式为 `v<SemVer>` 的标签时，`Release` 工作流核对三个版本文件，并分别测试、构建 Windows EXE/MSI/便携 ZIP 和 Linux DEB/RPM/AppImage。全部成功后统一发布 GitHub Release，说明取自 `docs/release-notes.md`。
 
 发布 `0.1.0` 的示例：
 

@@ -6,6 +6,7 @@ import ScopeChart, { type ScopeSeries } from "./components/ScopeChart.vue";
 import type {
   AuditEntry,
   CommunicationStats,
+  DiscoveryStatus,
   ConnectionMode,
   ParameterDefinition,
   ParameterValue,
@@ -61,6 +62,48 @@ const testProgress = ref("");
 const testResults = ref<Array<{ label: string; count: number; total: number; first: number; recovered: number; failed: number; elapsed: number }>>([]);
 let pollInFlight: Promise<void> | null = null;
 let disposed = false;
+const discoveryActive = ref(false);
+const discovery = ref<DiscoveryStatus | null>(null);
+const discoveryMessage = ref("");
+const discoveryStart = ref(1);
+const discoveryEnd = ref(247);
+const discoveryTimeout = ref(200);
+let discoveryTimer: number | undefined;
+
+async function pollDiscovery() {
+  if (!discoveryActive.value || disposed) return;
+  try { discovery.value = await servoApi.discoveryStatus(); } catch { /* Final command returns errors. */ }
+  if (discoveryActive.value && !disposed) discoveryTimer = window.setTimeout(pollDiscovery, 250);
+}
+
+async function discoverConnection() {
+  if (busy.value || connected.value || !profile.value || !portName.value) return;
+  if (![discoveryStart.value, discoveryEnd.value, discoveryTimeout.value].every(Number.isInteger) || discoveryStart.value < 1 || discoveryEnd.value > 247 || discoveryStart.value > discoveryEnd.value || discoveryTimeout.value < 100 || discoveryTimeout.value > 2000) {
+    showError("站号范围须为 1..247，探测超时须为 100..2000 ms"); return;
+  }
+  busy.value = true;
+  discoveryActive.value = true;
+  discovery.value = null;
+  discoveryMessage.value = "正在查找";
+  errorMessage.value = "";
+  const resultPromise = servoApi.discover({ connection: { mode: 'serial', portName: portName.value, slaveId: slaveId.value, baudRate: baudRate.value, parity: parity.value, stopBits: stopBits.value, timeoutMs: discoveryTimeout.value }, startSlave: discoveryStart.value, endSlave: discoveryEnd.value });
+  discoveryTimer = window.setTimeout(pollDiscovery, 250);
+  try {
+    const result = await resultPromise;
+    discovery.value = result;
+    if (result.found && result.slaveId !== null && result.baudRate !== null) {
+      slaveId.value = result.slaveId;
+      baudRate.value = result.baudRate;
+      discoveryMessage.value = `已找到：站号 ${result.slaveId}，${result.baudRate} baud。参数已填入，可点击连接。`;
+    } else discoveryMessage.value = result.cancelled ? "查找已取消，串口已释放" : "未找到。请检查串口、Profile、校验位、停止位，或增大探测超时后重试。";
+  } catch (error) { discoveryMessage.value = "查找失败"; showError(error); }
+  finally { window.clearTimeout(discoveryTimer); discoveryActive.value = false; busy.value = false; await refreshAudit(); }
+}
+
+async function cancelDiscovery() {
+  try { await servoApi.cancelDiscovery(); discoveryMessage.value = "正在等待当前读取结束"; }
+  catch (error) { showError(error); }
+}
 const probeRange = computed(() => addressGroups(profile.value?.statuses ?? [], 100).sort((a, b) => b.length - a.length)[0] ?? []);
 
 async function updateDiagnostics() {
@@ -528,7 +571,7 @@ function formatTimestamp(timestampMs: number) {
 }
 
 onMounted(refreshAudit);
-onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearTimeout(statusTimer); });
+onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearTimeout(statusTimer); window.clearTimeout(discoveryTimer); if (discoveryActive.value) void servoApi.cancelDiscovery(); });
 </script>
 
 <template>
@@ -571,7 +614,7 @@ onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearT
         <section class="panel connection-panel">
           <div class="section-title"><span>02</span><h2>连接设置</h2></div>
           <label>运行模式
-            <select v-model="connectionMode" :disabled="connected">
+            <select v-model="connectionMode" :disabled="connected || busy">
               <option value="simulator">配置模拟器（安全演练）</option>
               <option value="serial">真实 Modbus RTU</option>
             </select>
@@ -579,30 +622,45 @@ onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearT
           <template v-if="connectionMode === 'serial'">
             <label>串口
               <div class="inline-field">
-                <select v-model="portName" :disabled="connected">
+                <select v-model="portName" :disabled="connected || busy">
                   <option value="" disabled>请选择串口</option>
                   <option v-for="port in ports" :key="port.name" :value="port.name">{{ port.name }}</option>
                 </select>
-                <button class="icon-button" :disabled="connected" title="刷新串口" @click="refreshPorts">↻</button>
+                <button class="icon-button" :disabled="connected || busy" title="刷新串口" @click="refreshPorts">↻</button>
               </div>
             </label>
           </template>
           <div class="field-grid">
-            <label>站号<input v-model.number="slaveId" type="number" min="1" max="247" :disabled="connected" /></label>
+            <label>站号<input v-model.number="slaveId" type="number" min="1" max="247" :disabled="connected || busy" /></label>
             <label>波特率
-              <select v-model.number="baudRate" :disabled="connected">
+              <select v-model.number="baudRate" :disabled="connected || busy">
                 <option v-for="baud in profile?.transport.allowedBaudRates ?? [19200]" :key="baud" :value="baud">{{ baud }}</option>
               </select>
             </label>
             <label>校验
-              <select v-model="parity" :disabled="connected">
+              <select v-model="parity" :disabled="connected || busy">
                 <option value="none">无</option><option value="even">偶</option><option value="odd">奇</option>
               </select>
             </label>
-            <label>超时 ms<input v-model.number="timeoutMs" type="number" min="100" max="10000" :disabled="connected" /></label>
+            <label>超时 ms<input v-model.number="timeoutMs" type="number" min="100" max="10000" :disabled="connected || busy" /></label>
           </div>
           <button v-if="!connected" class="primary full" :disabled="busy || !profile" @click="connect">连接</button>
-          <button v-else class="danger-outline full" :disabled="busy" @click="disconnect">断开连接</button>
+          <template v-if="connectionMode === 'serial'">
+            <fieldset :disabled="busy || connected">
+              <legend>自动查找站号与波特率</legend>
+              <div class="field-grid">
+                <label>起始站号<input v-model.number="discoveryStart" type="number" min="1" max="247" /></label>
+                <label>结束站号<input v-model.number="discoveryEnd" type="number" min="1" max="247" /></label>
+                <label>探测超时 ms<input v-model.number="discoveryTimeout" type="number" min="100" max="2000" /></label>
+              </div>
+              <p>保持当前校验位和停止位，优先当前配置，再遍历 Profile 波特率。只读探测，找到首个响应设备后停止。</p>
+              <button class="secondary full" :disabled="!profile || !portName" @click="discoverConnection">自动查找</button>
+            </fieldset>
+            <p v-if="discoveryActive && discovery">{{ discovery.completed }}/{{ discovery.total }} · 站号 {{ discovery.slaveId }} · {{ discovery.baudRate }} baud</p>
+            <p>{{ discoveryMessage }}</p>
+            <button v-if="discoveryActive" class="secondary full" @click="cancelDiscovery">取消查找</button>
+          </template>
+          <button v-if="connected" class="danger-outline full" :disabled="busy" @click="disconnect">断开连接</button>
         </section>
 
         <section class="panel safety-panel">

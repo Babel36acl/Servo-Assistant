@@ -58,6 +58,9 @@ jobs:
         with:
           tauriScript: pnpm tauri
 
+      - name: Package portable
+        run: ./scripts/package-portable.ps1
+
       - name: Upload installers
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -65,5 +68,6 @@ jobs:
           path: |
             src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/bundle/nsis/*-setup.exe
+            src-tauri/target/release/bundle/portable/*.zip
           if-no-files-found: error
           retention-days: 14

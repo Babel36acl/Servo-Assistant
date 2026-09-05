@@ -1,4 +1,5 @@
 use crate::audit::{now_ms, AuditEntry, AuditStore, AuditStoreError};
+use crate::discovery::{self, DiscoveryControl, DiscoveryStatus};
 use crate::modbus::{CommunicationSettings, CommunicationStats, ModbusError, RtuClient};
 use crate::profile::{
     decode_value, encode_value, Access, OperationDefinition, OperationSet, ParameterDefinition,
@@ -8,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use serialport::{DataBits, Parity, StopBits};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::State;
@@ -61,11 +63,13 @@ enum RuntimeError {
 
 pub struct AppState {
     inner: Arc<Mutex<Runtime>>,
+    discovery: Arc<DiscoveryControl>,
 }
 
 impl AppState {
     pub fn new(database_path: PathBuf) -> Result<Self, AuditStoreError> {
         Ok(Self {
+            discovery: Arc::default(),
             inner: Arc::new(Mutex::new(Runtime {
                 profile: None,
                 session: None,
@@ -352,9 +356,16 @@ where
     T: Send + 'static,
     F: FnOnce(&mut Runtime) -> Result<T, RuntimeError> + Send + 'static,
 {
+    if state.discovery.running.load(Ordering::SeqCst) {
+        return Err("自动查找占用串口，请先取消或等待完成".into());
+    }
     let inner = state.inner.clone();
+    let discovery = state.discovery.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let mut runtime = inner.lock().map_err(|_| RuntimeError::Poisoned)?;
+        if discovery.running.load(Ordering::SeqCst) {
+            return Err(RuntimeError::Task("自动查找正在运行".into()));
+        }
         let result = operation(&mut runtime);
         let events = match runtime.session.as_mut() {
             Some(Session::Serial(client)) => std::mem::take(&mut client.events),
@@ -374,6 +385,77 @@ where
     .await
     .map_err(|error| RuntimeError::Task(error.to_string()).to_string())?
     .map_err(|error| error.to_string())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoveryRequest {
+    connection: ConnectionRequest,
+    start_slave: u8,
+    end_slave: u8,
+}
+
+#[tauri::command]
+pub fn cancel_discovery(state: State<'_, AppState>) {
+    state.discovery.cancel.store(true, Ordering::SeqCst);
+}
+
+#[tauri::command]
+pub fn get_discovery_status(state: State<'_, AppState>) -> Result<DiscoveryStatus, String> {
+    state
+        .discovery
+        .status
+        .lock()
+        .map(|status| status.clone())
+        .map_err(|_| "探测状态锁已损坏".into())
+}
+
+#[tauri::command]
+pub async fn discover_device(
+    request: DiscoveryRequest,
+    state: State<'_, AppState>,
+) -> Result<DiscoveryStatus, String> {
+    if state
+        .discovery
+        .running
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return Err("自动查找已经运行".into());
+    }
+    state.discovery.cancel.store(false, Ordering::SeqCst);
+    let worker_control = state.discovery.clone();
+    let inner = state.inner.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || -> Result<DiscoveryStatus, String> {
+        let _lease = discovery::DiscoveryLease(worker_control.clone());
+        let mut runtime = inner.lock().map_err(|_| "内部状态锁已损坏")?;
+        if runtime.session.is_some() { return Err("请先断开连接再自动查找".into()); }
+        let profile = runtime.profile.as_ref().ok_or("请先导入设备 Profile")?;
+        let mut connection = request.connection;
+        if !matches!(connection.mode, ConnectionMode::Serial) { return Err("自动查找仅适用于真实串口".into()); }
+        let candidates = discovery::candidates(request.start_slave, request.end_slave, connection.slave_id, connection.baud_rate, &profile.transport.allowed_baud_rates)?;
+        let address = profile.statuses.first().map(|item| item.address)
+            .or_else(|| profile.parameters.first().map(|item| item.address)).ok_or("Profile 没有可读取的地址")?;
+        let mut client: Option<(u32, RtuClient)> = None;
+        let result = discovery::scan(&worker_control, &candidates, |baud, slave| {
+            if client.as_ref().is_none_or(|(rate, _)| *rate != baud) {
+                // Close the previous baud-rate handle before reopening the same port.
+                client = None;
+                connection.baud_rate = baud;
+                connection.slave_id = slave;
+                client = Some((baud, open_serial_client(&connection).map_err(|error| error.to_string())?));
+            }
+            client.as_mut().unwrap().1.detect_slave(slave, address).map_err(|error| error.to_string())
+        });
+        drop(client);
+        let detail = match &result {
+            Ok(status) => format!("port={:?} checked={}/{} found={} cancelled={} slave={:?} baud={:?} address=0x{address:04X}", connection.port_name, status.completed, status.total, status.found, status.cancelled, status.slave_id, status.baud_rate),
+            Err(error) => error.clone(),
+        };
+        runtime.push_audit("communication.discovery", if result.is_ok() { "completed" } else { "failed" }, &detail).map_err(|error| error.to_string())?;
+        result
+    }).await.map_err(|error| error.to_string()).and_then(|result| result);
+    result
 }
 
 #[tauri::command]
@@ -420,6 +502,48 @@ pub async fn list_serial_ports() -> Result<Vec<SerialPortInfo>, String> {
     .map_err(|error| RuntimeError::Task(error.to_string()).to_string())?
 }
 
+fn open_serial_client(request: &ConnectionRequest) -> Result<RtuClient, RuntimeError> {
+    let port_name = request
+        .port_name
+        .as_deref()
+        .ok_or_else(|| RuntimeError::Profile(ProfileError::Validation("必须选择串口".into())))?;
+    let parity = match request.parity {
+        ParitySetting::None => Parity::None,
+        ParitySetting::Even => Parity::Even,
+        ParitySetting::Odd => Parity::Odd,
+    };
+    let stop_bits = match request.stop_bits {
+        1 => StopBits::One,
+        2 => StopBits::Two,
+        _ => {
+            return Err(RuntimeError::Profile(ProfileError::Validation(
+                "停止位只能为 1 或 2".into(),
+            )))
+        }
+    };
+    let port = serialport::new(port_name, request.baud_rate)
+        .data_bits(DataBits::Eight)
+        .parity(parity)
+        .stop_bits(stop_bits)
+        .timeout(Duration::from_millis(request.timeout_ms.clamp(100, 10_000)))
+        .open()
+        .map_err(|error| {
+            RuntimeError::Task(format!(
+                "无法打开 {port_name}：{error}。若拒绝访问，请检查端口是否被其他程序或测试占用。"
+            ))
+        })?;
+    let bits_per_char = 1
+        + 8
+        + u32::from(!matches!(request.parity, ParitySetting::None))
+        + request.stop_bits as u32;
+    Ok(RtuClient::new(
+        port,
+        request.slave_id,
+        request.baud_rate,
+        bits_per_char,
+    ))
+}
+
 #[tauri::command]
 pub async fn connect_device(
     request: ConnectionRequest,
@@ -447,41 +571,7 @@ pub async fn connect_device(
         }
         let session = match request.mode {
             ConnectionMode::Simulator => Session::Simulator(SimulatorDevice::new(&profile)?),
-            ConnectionMode::Serial => {
-                let port_name = request.port_name.as_deref().ok_or_else(|| {
-                    RuntimeError::Profile(ProfileError::Validation("必须选择串口".into()))
-                })?;
-                let parity = match request.parity {
-                    ParitySetting::None => Parity::None,
-                    ParitySetting::Even => Parity::Even,
-                    ParitySetting::Odd => Parity::Odd,
-                };
-                let stop_bits = match request.stop_bits {
-                    1 => StopBits::One,
-                    2 => StopBits::Two,
-                    _ => {
-                        return Err(RuntimeError::Profile(ProfileError::Validation(
-                            "停止位只能为 1 或 2".into(),
-                        )))
-                    }
-                };
-                let port = serialport::new(port_name, request.baud_rate)
-                    .data_bits(DataBits::Eight)
-                    .parity(parity)
-                    .stop_bits(stop_bits)
-                    .timeout(Duration::from_millis(request.timeout_ms.clamp(100, 10_000)))
-                    .open().map_err(|error| RuntimeError::Task(format!("无法打开 {port_name}：{error}。若拒绝访问，请检查端口是否被其他程序或测试占用。")))?;
-                let bits_per_char = 1
-                    + 8
-                    + u32::from(!matches!(request.parity, ParitySetting::None))
-                    + request.stop_bits as u32;
-                Session::Serial(RtuClient::new(
-                    port,
-                    request.slave_id,
-                    request.baud_rate,
-                    bits_per_char,
-                ))
-            }
+            ConnectionMode::Serial => Session::Serial(open_serial_client(&request)?),
         };
         let mode = session.mode();
         runtime.session = Some(session);

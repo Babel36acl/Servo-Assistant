@@ -221,3 +221,15 @@ fn zero_retries_and_settings_limits() {
     .is_err());
     assert!(client.read_holding_registers(u16::MAX, 2).is_err());
 }
+
+#[test]
+fn discovery_requires_two_valid_responses_and_preserves_station_check() {
+    let good = frame(vec![1, 3, 2, 0, 42]);
+    let mut detected = client(vec![good.clone(), good.clone()]);
+    assert!(detected.detect_slave(1, 0x1000).unwrap());
+    let mut single = client(vec![good.clone()]);
+    assert!(!single.detect_slave(1, 0x1000).unwrap());
+    let mut wrong_station = client(vec![good]);
+    assert!(!wrong_station.detect_slave(2, 0x1000).unwrap());
+    assert!(wrong_station.detect_slave(0, 0x1000).is_err());
+}

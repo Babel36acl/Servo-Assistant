@@ -13,9 +13,22 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release-windows:
-    name: Release Windows
-    runs-on: windows-latest
+  build:
+    name: Build ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            os: windows-latest
+            bundles: msi,nsis
+          - platform: linux
+            os: ubuntu-22.04
+            bundles: deb,rpm,appimage
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: pwsh
     timeout-minutes: 45
     env:
       RELEASE_TAG: ${{ github.ref_name }}
@@ -34,6 +47,13 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libudev-dev patchelf
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
@@ -69,15 +89,76 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo clippy --manifest-path src-tauri/Cargo.toml --locked -- -D warnings
 
-      - name: Build and publish GitHub Release
+      - name: Build packages
         uses: tauri-apps/tauri-action@1ddc7b49b13c3038297360482fcb3e058764d7c9 # v0.6.2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tauriScript: pnpm tauri
-          tagName: ${{ github.ref_name }}
-          releaseName: Servo Assistant ${{ github.ref_name }}
-          releaseBody: Windows 安装包由 GitHub Actions 自动构建；请按需下载 MSI 或 NSIS 安装程序。
-          generateReleaseNotes: true
-          releaseDraft: false
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          args: --bundles ${{ matrix.bundles }}
+
+      - name: Package Windows portable
+        if: runner.os == 'Windows'
+        run: ./scripts/package-portable.ps1
+
+      - name: Stage packages
+        env:
+          PACKAGE_PLATFORM: ${{ matrix.platform }}
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          New-Item -ItemType Directory -Path release-files -Force | Out-Null
+          $patterns = if ($env:PACKAGE_PLATFORM -eq 'windows') { @('msi/*.msi','nsis/*-setup.exe','portable/*.zip') } else { @('deb/*.deb','rpm/*.rpm','appimage/*.AppImage') }
+          foreach ($pattern in $patterns) {
+            $files = @(Get-ChildItem "src-tauri/target/release/bundle/$pattern")
+            if ($files.Count -ne 1) { throw "预期一个产物：$pattern，实际 $($files.Count)" }
+            $suffix = switch ($files[0].Extension) { '.msi' { 'setup.msi' } '.exe' { 'setup.exe' } '.zip' { 'portable.zip' } '.deb' { 'package.deb' } '.rpm' { 'package.rpm' } '.AppImage' { 'AppImage' } }
+            Copy-Item -LiteralPath $files[0].FullName -Destination "release-files/Servo-Assistant_${version}_$($env:PACKAGE_PLATFORM)_x64_$suffix"
+          }
+
+      - name: Upload packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-${{ matrix.platform }}
+          path: release-files/*
+          if-no-files-found: error
+
+  verify-linux:
+    name: Verify ${{ matrix.distro }} package
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [debian, fedora, arch]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Download Linux packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-linux
+          path: release-files
+      - name: Check installation and linked libraries
+        env:
+          DISTRO: ${{ matrix.distro }}
+        run: bash scripts/verify-linux-package.sh "$DISTRO"
+
+  publish:
+    name: Publish Release
+    needs: [build, verify-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Download packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: release-*
+          path: release-files
+          merge-multiple: true
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          flags=()
+          if [[ "$RELEASE_TAG" == *-* ]]; then flags+=(--prerelease); fi
+          gh release create "$RELEASE_TAG" release-files/* --verify-tag --title "Servo Assistant $RELEASE_TAG" --notes-file docs/release-notes.md "${flags[@]}"

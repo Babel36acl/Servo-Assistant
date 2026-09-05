@@ -172,3 +172,12 @@ export interface ProbeResult {
   elapsedMs: number;
   error: string | null;
 }
+
+export interface DiscoveryStatus {
+  completed: number;
+  total: number;
+  slaveId: number | null;
+  baudRate: number | null;
+  found: boolean;
+  cancelled: boolean;
+}
