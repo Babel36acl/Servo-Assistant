@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "伺服参数调试器",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "identifier": "com.servoassistant.desktop",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -39,6 +39,9 @@
       "icons/icon.ico"
     ],
     "resources": {
+      "vendor/glib/LICENSE": "licenses/glib-LICENSE.txt",
+      "vendor/glib/COPYRIGHT": "licenses/glib-COPYRIGHT.txt",
+      "vendor/glib/PATCH.md": "licenses/glib-PATCH.md",
       "native/README.md": "licenses/ethercat-native.md",
       "native/soem/LICENSE": "licenses/SOEM-LICENSE.txt",
       "native/soem/oshw/win32/wpcap/Include/": "licenses/winpcap-sdk/"

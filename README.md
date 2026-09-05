@@ -99,17 +99,19 @@ Linux x64 在 Ubuntu 22.04 构建：Debian 12 及以上使用 DEB，Fedora 使�
 
 ## 自动构建与发布
 
-- 推送到 `main`、提交 Pull Request 或手动运行 `CI` 工作流时，会在 Windows runner 上执行前端构建、Rust 测试、Clippy 检查和 Tauri 安装包构建。MSI/NSIS 制品可从对应的 Actions 运行记录下载。
-- 推送格式为 `v<SemVer>` 的标签时，`Release` 工作流核对三个版本文件，并分别测试、构建 Windows EXE/MSI/便携 ZIP 和 Linux DEB/RPM/AppImage。全部成功后统一发布 GitHub Release，说明取自 `docs/release-notes.md`。
+- Pull Request 或手动运行 `CI` 时，执行 Windows 检查和打包，不发布。
+- 每次推送到 `main`，或在 `main` 上手动运行 `Release`，都会测试、构建 Windows EXE/MSI/便携 ZIP 和 Linux DEB/RPM/AppImage，执行 Linux 优化模式 glib 安全回归测试，并验证 Debian/Fedora/Arch 包。全部成功后自动创建标签和 GitHub Release，说明取自 `docs/release-notes.md`。
+- 自动版本取源码版本与现有稳定标签的下一补丁版本中的较大值；同一已发布提交重跑时复用版本并保留既有发布。源码中的版本是发布起始版本，流水线会在构建副本中同步更新 package、Tauri、Cargo 和锁文件的实际发布版本，标签指向触发构建的源码提交，不向 main 写入机器人版本提交。
 
-发布 `0.1.0` 的示例：
+立即构建并发布当前 main：
 
 ```powershell
-git tag v0.1.0
-git push origin v0.1.0
+gh workflow run release.yml --ref main
 ```
 
-如果三个项目版本与标签不一致，发布会在生成 Release 前失败，不会留下半成品发布。
+构建时核对三个项目版本与选定发布版本；任一平台构建、测试或包验证失败都不会创建 Release。后续无需手工推送标签。自动生成版本的源码复现：检出发布标签后，运行 `./scripts/release-version.ps1 -Apply -Version <标签去掉v>`，再执行正常构建命令。
+
+Linux GTK3 依赖的 glib 0.18.5 使用仓库内的上游安全修复回移，见 [补丁来源与移除条件](src-tauri/vendor/glib/PATCH.md)。没有添加告警忽略规则；版本扫描器仍可能按 0.18.5 报警。
 
 当前流水线未配置 Windows 代码签名证书，安装包能够正常构建，但从浏览器下载后可能触发 SmartScreen 提示。
 

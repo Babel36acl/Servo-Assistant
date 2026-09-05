@@ -2,18 +2,34 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-main
   cancel-in-progress: false
 
 jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Select next release version
+        id: version
+        shell: pwsh
+        run: ./scripts/release-version.ps1
+
   build:
+    needs: prepare
     name: Build ${{ matrix.platform }}
     strategy:
       fail-fast: false
@@ -31,7 +47,8 @@ jobs:
         shell: pwsh
     timeout-minutes: 45
     env:
-      RELEASE_TAG: ${{ github.ref_name }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
 
     steps:
       - name: Checkout
@@ -57,6 +74,9 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+
+      - name: Apply release version
+        run: ./scripts/release-version.ps1 -Apply -Version $env:RELEASE_VERSION
 
       - name: Verify release version
         shell: pwsh
@@ -94,6 +114,10 @@ jobs:
         with:
           tauriScript: pnpm tauri
           args: --bundles ${{ matrix.bundles }}
+
+      - name: Test glib security backport with optimizations
+        if: runner.os == 'Linux'
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked --release --test glib_security
 
       - name: Package Windows portable
         if: runner.os == 'Windows'
@@ -143,7 +167,9 @@ jobs:
 
   publish:
     name: Publish Release
-    needs: [build, verify-linux]
+    needs: [prepare, build, verify-linux]
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -157,8 +183,11 @@ jobs:
       - name: Publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
-          flags=()
-          if [[ "$RELEASE_TAG" == *-* ]]; then flags+=(--prerelease); fi
-          gh release create "$RELEASE_TAG" release-files/* --verify-tag --title "Servo Assistant $RELEASE_TAG" --notes-file docs/release-notes.md "${flags[@]}"
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; preserving published assets."
+            exit 0
+          fi
+          gh release create "$RELEASE_TAG" release-files/* --target "$GITHUB_SHA" --title "Servo Assistant $RELEASE_TAG" --notes-file docs/release-notes.md
