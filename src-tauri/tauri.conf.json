@@ -39,9 +39,9 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "vendor/glib/LICENSE": "licenses/glib-LICENSE.txt",
-      "vendor/glib/COPYRIGHT": "licenses/glib-COPYRIGHT.txt",
-      "vendor/glib/PATCH.md": "licenses/glib-PATCH.md",
+      "vendor/glib/LICENSE": "licenses/glib/LICENSE",
+      "vendor/glib/COPYRIGHT": "licenses/glib/COPYRIGHT",
+      "vendor/glib/PATCH.md": "licenses/glib/PATCH.md",
       "native/README.md": "licenses/ethercat-native.md",
       "native/soem/LICENSE": "licenses/SOEM-LICENSE.txt",
       "native/soem/oshw/win32/wpcap/Include/": "licenses/winpcap-sdk/"

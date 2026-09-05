@@ -113,7 +113,7 @@ jobs:
         uses: tauri-apps/tauri-action@1ddc7b49b13c3038297360482fcb3e058764d7c9 # v0.6.2
         with:
           tauriScript: pnpm tauri
-          args: --bundles ${{ matrix.bundles }}
+          args: --bundles ${{ matrix.bundles }} --verbose
 
       - name: Test glib security backport with optimizations
         if: runner.os == 'Linux'
