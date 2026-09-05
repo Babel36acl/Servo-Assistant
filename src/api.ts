@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AuditEntry,
+  SerialProtocol,
+  ConnectionPreset,
   CommunicationStats,
   DiscoveryStatus,
   ProbeResult,
@@ -20,7 +22,7 @@ import type {
 
 export const servoApi = {
   discover(request: {
-    connection: { mode: ConnectionMode; portName: string; slaveId: number; baudRate: number; parity: Parity; stopBits: number; timeoutMs: number };
+    connection: { protocol: SerialProtocol; preset: ConnectionPreset; mode: ConnectionMode; portName: string; slaveId: number; baudRate: number; parity: Parity; stopBits: number; timeoutMs: number };
     startSlave: number; endSlave: number;
   }) { return invoke<DiscoveryStatus>("discover_device", { request }); },
   discoveryStatus() { return invoke<DiscoveryStatus>("get_discovery_status"); },
@@ -42,6 +44,8 @@ export const servoApi = {
     return invoke<SerialPortInfo[]>("list_serial_ports");
   },
   connect(request: {
+    protocol: SerialProtocol;
+    preset: ConnectionPreset;
     mode: ConnectionMode;
     portName: string | null;
     slaveId: number;

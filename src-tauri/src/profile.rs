@@ -48,7 +48,7 @@ pub struct TransportProfile {
     pub timeout_ms: u64,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ParitySetting {
     None,
@@ -159,9 +159,9 @@ impl ServoProfile {
         if self.device.id.trim().is_empty() || self.device.name.trim().is_empty() {
             return Err(ProfileError::Validation("设备 id 和 name 不能为空".into()));
         }
-        if self.transport.kind != "modbus-rtu" {
+        if !matches!(self.transport.kind.as_str(), "modbus-rtu" | "modbus-ascii") {
             return Err(ProfileError::Validation(
-                "V1 仅支持 transport.kind=modbus-rtu".into(),
+                "transport.kind 仅支持 modbus-rtu / modbus-ascii".into(),
             ));
         }
         if !(1..=247).contains(&self.transport.default_slave_id) {

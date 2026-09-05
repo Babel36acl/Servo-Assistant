@@ -38,7 +38,7 @@ function fixture(overrides = {}) {
     return module.exports;
   }
   const script = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8').split('<script setup lang="ts">')[1].split('</script>')[0];
-  const app = evaluate(script + '\nexport { readAll, runStabilityTest, scheduleStatusPoll, pollingEnabled, connected, profile, maxRegisters, values, drafts, staleIds, failedGroups, busy, cancelRequested, readProgress, errorMessage, communicationError, testResults, testCycles, discoverConnection, discovery, discoveryMessage, discoveryActive, portName, slaveId, baudRate };');
+  const app = evaluate(script + '\nexport { readAll, runStabilityTest, scheduleStatusPoll, pollingEnabled, connected, profile, maxRegisters, values, drafts, staleIds, failedGroups, busy, cancelRequested, readProgress, errorMessage, communicationError, testResults, testCycles, discoverConnection, discovery, discoveryMessage, discoveryActive, portName, slaveId, baudRate, protocol, parity, stopBits, connectionPreset, changeConnectionPreset, discoveryEnd, connectionBlockedReason, connectionMode, connect };');
   app.connected.value = true;
   app.profile.value = { parameters: [{ parameterId: 'P1', address: 1 }, { parameterId: 'P2', address: 3 }], statuses: [{ id: 'speed', address: 4096 }, { id: 'position', address: 4097 }] };
   return { app, timers, api };
@@ -114,12 +114,15 @@ test('stability cancellation ends after the in-flight read and preserves metrics
 
 
 test('discovery fills a confirmed result but does not connect automatically', async () => {
-  const { app } = fixture({ discover: async () => ({ completed: 2, total: 10, slaveId: 7, baudRate: 9600, found: true, cancelled: false }) });
+  const { app } = fixture({ discover: async () => ({ completed: 2, total: 10, slaveId: 7, baudRate: 9600, serialMode: { protocol: "ascii", parity: "odd", stopBits: 1 }, found: true, cancelled: false }) });
   app.connected.value = false;
   app.portName.value = 'COM4';
   await app.discoverConnection();
   assert.equal(app.slaveId.value, 7);
   assert.equal(app.baudRate.value, 9600);
+  assert.equal(app.protocol.value, "ascii");
+  assert.equal(app.parity.value, "odd");
+  assert.equal(app.stopBits.value, 1);
   assert.equal(app.connected.value, false);
   assert.equal(app.busy.value, false);
 });
@@ -133,4 +136,37 @@ test('cancelled discovery preserves prior settings and releases busy state', asy
   assert.equal(app.baudRate.value, 19200);
   assert.equal(app.discoveryActive.value, false);
   assert.equal(app.busy.value, false);
+});
+
+test('P300 preset applies device limits without writing and rejects out-of-range discovery', async () => {
+  let calls = 0;
+  const { app } = fixture({ discover: async () => { calls++; } });
+  app.connected.value = false;
+  app.portName.value = 'COM4';
+  app.connectionPreset.value = 'p300';
+  app.changeConnectionPreset();
+  assert.equal(app.discoveryEnd.value, 32);
+  assert.equal(app.protocol.value, 'rtu');
+  assert.equal(app.parity.value, 'even');
+  app.discoveryEnd.value = 33;
+  await app.discoverConnection();
+  assert.equal(calls, 0);
+  assert.match(app.errorMessage.value, /1..32/);
+});
+
+test('selected serial port cannot hide a missing profile; importing profile enables connection', async () => {
+  let calls = 0;
+  const { app } = fixture({ connect: async () => { calls++; } });
+  app.connected.value = false;
+  app.connectionMode.value = 'serial';
+  app.portName.value = 'COM1';
+  app.profile.value = null;
+  assert.match(app.connectionBlockedReason.value, /Profile/);
+  await app.connect();
+  assert.equal(calls, 0);
+  assert.equal(app.busy.value, false);
+  app.profile.value = { parameters: [], statuses: [] };
+  assert.equal(app.connectionBlockedReason.value, '');
+  app.portName.value = '';
+  assert.match(app.connectionBlockedReason.value, /串口/);
 });

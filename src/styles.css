@@ -60,7 +60,7 @@ button:hover:not(:disabled), .file-button:hover { border-color: #4aa6ad; transfo
 .full { width: 100%; margin-top: 9px; }
 
 label { display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: 11px; margin-bottom: 10px; }
-input, select { width: 100%; min-height: 34px; color: #e5f1f5; border: 1px solid var(--line); border-radius: 3px; background: #091319; padding: 6px 8px; outline: none; }
+input:not([type="checkbox"]), select { width: 100%; min-height: 34px; color: #e5f1f5; border: 1px solid var(--line); border-radius: 3px; background: #091319; padding: 6px 8px; outline: none; }
 input:focus, select:focus { border-color: var(--cyan); }
 .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 9px; }
 .inline-field { display: grid; grid-template-columns: 1fr 34px; gap: 5px; }
@@ -128,9 +128,20 @@ tr.dirty { background: #3b2d1026; }
   .workspace { grid-template-columns: 270px minmax(0, 1fr); }
   .status-strip { grid-template-columns: repeat(3, 1fr); }
 }
-.communication-panel { padding: 20px; margin-bottom: 18px; }
-.communication-controls { border: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 14px; align-items: end; }
-.communication-controls label { display: grid; gap: 6px; }
-.communication-controls input[type="number"] { width: 150px; }
-.communication-panel p { overflow-wrap: anywhere; }
+.communication-panel { padding: 18px; }
+.communication-panel h2 { margin-bottom: 14px; }
+.communication-controls { min-width: 0; margin: 0 0 14px; border: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 12px; align-items: end; }
+.communication-controls label { display: grid; gap: 6px; margin: 0; }
+.communication-controls input[type="number"] { width: 100%; }
+.communication-panel p { overflow-wrap: anywhere; color: var(--muted); font-size: 12px; line-height: 1.65; margin-top: 6px; }
 .communication-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+input[type="checkbox"] { width: 16px; height: 16px; min-height: 0; padding: 0; margin: 0; flex: 0 0 auto; accent-color: var(--cyan); }
+.communication-controls .toggle-field { display: flex; flex-direction: row; align-items: center; gap: 8px; min-height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 3px; color: #dce8ee; }
+.communication-controls button { min-height: 34px; }
+.discovery-settings { min-width: 0; margin: 18px 0 0; padding: 12px; border: 1px solid var(--line); border-radius: 4px; background: #0b161c; }
+.discovery-settings legend { padding: 0 6px; color: var(--cyan); font-size: 12px; }
+.field-help { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 6px 0 10px; overflow-wrap: anywhere; }
+.field-grid > label { min-width: 0; }
+.connection-requirement { margin-top: 8px; padding: 10px; border: 1px solid #79592f; border-radius: 3px; background: #2a210f; }
+.connection-requirement p { color: var(--amber); font-size: 12px; line-height: 1.6; }

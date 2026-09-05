@@ -111,8 +111,8 @@ fn frame(mut bytes: Vec<u8>) -> Vec<u8> {
     bytes.extend_from_slice(&modbus_crc(&bytes).to_le_bytes());
     bytes
 }
-fn client(responses: Vec<Vec<u8>>) -> RtuClient {
-    RtuClient::new(
+fn client(responses: Vec<Vec<u8>>) -> SerialClient {
+    SerialClient::new(
         Box::new(ScriptPort {
             responses: responses.into(),
             current: VecDeque::new(),
@@ -183,7 +183,7 @@ fn write_is_never_retried() {
         current: VecDeque::new(),
         writes: Arc::clone(&writes),
     };
-    let mut client = RtuClient::new(Box::new(port), 1, 19200, 11);
+    let mut client = SerialClient::new(Box::new(port), 1, 19200, 11);
     assert!(client.write_single_register(12, 42).is_err());
     assert_eq!(writes.lock().unwrap().len(), 1);
 }
@@ -271,4 +271,104 @@ fn recording_covers_partial_reads_crc_retry_and_does_not_retry_writes() {
         .iter()
         .any(|r| r.detail.contains("discarded bytes unavailable")));
     std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn ascii_known_wire_frame_and_fragmented_read() {
+    let writes = Arc::default();
+    let port = ScriptPort {
+        responses: vec![b":010302002AD0\r\n".to_vec()].into(),
+        current: VecDeque::new(),
+        writes: Arc::clone(&writes),
+    };
+    let mut c = SerialClient::new(Box::new(port), 1, 19200, 11).with_protocol(Protocol::Ascii);
+    assert_eq!(c.read_transaction(0, 1).unwrap(), [42]);
+    assert_eq!(writes.lock().unwrap()[0], b":010300000001FB\r\n");
+}
+
+#[test]
+fn ascii_lrc_retry_and_partial_timeout_evidence() {
+    let mut c = client(vec![
+        b":010302002AD1\r\n".to_vec(),
+        b":010302002AD0\r\n".to_vec(),
+    ])
+    .with_protocol(Protocol::Ascii);
+    assert_eq!(c.read_transaction(12, 1).unwrap(), [42]);
+    assert_eq!(
+        (
+            c.stats.lrc_errors,
+            c.stats.crc_errors,
+            c.stats.recovered,
+            c.stats.retries
+        ),
+        (1, 0, 1, 1)
+    );
+    let mut c = client(vec![b":0103".to_vec(); 3]).with_protocol(Protocol::Ascii);
+    assert!(c
+        .read_transaction(12, 1)
+        .unwrap_err()
+        .to_string()
+        .contains("rx=[3A, 30, 31, 30, 33]"));
+    assert_eq!((c.stats.timeouts, c.stats.retries), (3, 2));
+}
+
+#[test]
+fn ascii_rejects_framing_station_function_and_count() {
+    for response in [
+        b":010302002AD0\n".to_vec(),
+        b":01030Z002AD0\r\n".to_vec(),
+        ascii_frame(&[2, 3, 2, 0, 42]),
+        ascii_frame(&[1, 6, 0, 0, 0, 1]),
+        ascii_frame(&[1, 3, 4, 0, 1, 0, 2]),
+        ascii_frame(&[1, 0x83, 2]),
+        b":0\r\n".to_vec(),
+        vec![b':'; 514],
+    ] {
+        let mut c = client(vec![response]).with_protocol(Protocol::Ascii);
+        assert!(c.read_transaction(0, 1).is_err());
+        assert_eq!(c.stats.retries, 0);
+    }
+}
+
+#[test]
+fn ascii_write_echo_and_no_retry_on_lrc_or_mismatch() {
+    for response in [
+        b":0106000C002ABD\r\n".to_vec(),
+        ascii_frame(&[1, 6, 0, 12, 0, 41]),
+        Vec::new(),
+    ] {
+        let writes = Arc::default();
+        let port = ScriptPort {
+            responses: vec![response].into(),
+            current: VecDeque::new(),
+            writes: Arc::clone(&writes),
+        };
+        let mut c = SerialClient::new(Box::new(port), 1, 19200, 11).with_protocol(Protocol::Ascii);
+        assert!(c.write_single_register(12, 42).is_err());
+        assert_eq!(writes.lock().unwrap().len(), 1);
+    }
+    let mut c = client(vec![b":0106000C002AC3\r\n".to_vec()]).with_protocol(Protocol::Ascii);
+    assert!(c.write_single_register(12, 42).is_ok());
+}
+
+#[test]
+fn ascii_discovery_requires_two_responses() {
+    let response = b":010302002AD0\r\n".to_vec();
+    assert!(client(vec![response.clone(), response.clone()])
+        .with_protocol(Protocol::Ascii)
+        .detect_slave(1, 0)
+        .unwrap());
+    assert!(!client(vec![response])
+        .with_protocol(Protocol::Ascii)
+        .detect_slave(1, 0)
+        .unwrap());
+}
+
+#[test]
+fn rtu_bad_header_is_rejected_without_waiting_for_tail_or_retrying() {
+    for response in [vec![2, 3], vec![1, 6], vec![1, 3, 4]] {
+        let mut c = client(vec![response]);
+        assert!(c.read_transaction(0, 1).is_err());
+        assert_eq!((c.stats.retries, c.stats.timeouts), (0, 0));
+    }
 }

@@ -5,6 +5,22 @@ use std::io::Write;
 use std::time::{Duration, Instant};
 use thiserror::Error;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Protocol {
+    #[default]
+    Rtu,
+    Ascii,
+}
+impl Protocol {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Rtu => "modbus-rtu",
+            Self::Ascii => "modbus-ascii",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommunicationSettings {
@@ -40,6 +56,7 @@ pub struct CommunicationStats {
     pub recovered: u64,
     pub failed: u64,
     pub crc_errors: u64,
+    pub lrc_errors: u64,
     pub timeouts: u64,
     pub retries: u64,
     pub last_success_ms: Option<u64>,
@@ -47,7 +64,7 @@ pub struct CommunicationStats {
 }
 
 fn retryable(error: &ModbusError) -> bool {
-    matches!(error, ModbusError::Crc)
+    matches!(error, ModbusError::Crc | ModbusError::Lrc)
         || matches!(error, ModbusError::Io(e) if e.kind() == std::io::ErrorKind::TimedOut)
 }
 
@@ -85,15 +102,18 @@ pub enum ModbusError {
     Exception { function: u8, code: u8 },
     #[error("Modbus CRC 校验失败")]
     Crc,
+    #[error("Modbus LRC 校验失败")]
+    Lrc,
     #[error("Modbus 响应格式无效：{0}")]
     InvalidResponse(String),
     #[error("{0}")]
     ReadFailed(String),
 }
 
-pub struct RtuClient {
+pub struct SerialClient {
     port: Box<dyn SerialPort>,
     slave_id: u8,
+    protocol: Protocol,
     inter_frame_delay: Duration,
     last_frame_end: Option<Instant>,
     pub settings: CommunicationSettings,
@@ -104,7 +124,7 @@ pub struct RtuClient {
     capture: Option<(crate::recording::Recorder, String)>,
 }
 
-impl RtuClient {
+impl SerialClient {
     pub fn set_slave_id(&mut self, slave: u8) {
         self.slave_id = slave;
     }
@@ -140,6 +160,7 @@ impl RtuClient {
         Self {
             port,
             slave_id,
+            protocol: Protocol::Rtu,
             inter_frame_delay: Duration::from_micros(micros.max(1.0) as u64),
             last_frame_end: None,
             settings: CommunicationSettings::default(),
@@ -149,6 +170,11 @@ impl RtuClient {
             capture_transaction: Default::default(),
             capture: None,
         }
+    }
+
+    pub fn with_protocol(mut self, protocol: Protocol) -> Self {
+        self.protocol = protocol;
+        self
     }
 
     pub fn with_recorder(mut self, recorder: crate::recording::Recorder) -> Self {
@@ -165,6 +191,7 @@ impl RtuClient {
             recorder,
             transaction: self.capture_transaction.clone(),
             source,
+            protocol: self.protocol.label(),
         });
         self
     }
@@ -212,6 +239,9 @@ impl RtuClient {
                     if matches!(error, ModbusError::Crc) {
                         self.stats.crc_errors += 1;
                     }
+                    if matches!(error, ModbusError::Lrc) {
+                        self.stats.lrc_errors += 1;
+                    }
                     if matches!(&error, ModbusError::Io(e) if e.kind() == std::io::ErrorKind::TimedOut)
                     {
                         self.stats.timeouts += 1;
@@ -236,107 +266,153 @@ impl RtuClient {
         if count == 0 || count > 100 {
             return Err(ModbusError::InvalidResponse("读取数量必须为 1..100".into()));
         }
-        let request = request_frame(self.slave_id, 0x03, address, count);
-        self.exchange(&request, 0x03, |port, prefix, received| {
-            let mut byte_count = [0_u8; 1];
-            read_captured(port, &mut byte_count, received)?;
-            let byte_count = byte_count[0] as usize;
-            if byte_count != count as usize * 2 {
-                return Err(ModbusError::InvalidResponse(format!(
-                    "FC03 字节数应为 {}，实际为 {byte_count}",
-                    count * 2
-                )));
-            }
-            let mut tail = vec![0_u8; byte_count + 2];
-            read_captured(port, &mut tail, received)?;
-            let mut response = Vec::with_capacity(3 + tail.len());
-            response.extend_from_slice(prefix);
-            response.push(byte_count as u8);
-            response.extend_from_slice(&tail);
-            verify_crc(&response)?;
-            Ok(response[3..3 + byte_count]
-                .as_chunks::<2>()
-                .0
-                .iter()
-                .map(|bytes| u16::from_be_bytes(*bytes))
-                .collect())
-        })
+        let request = request_payload(self.slave_id, 0x03, address, count);
+        let response = self.exchange(&request, 0x03)?;
+        Ok(response[3..]
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|bytes| u16::from_be_bytes(*bytes))
+            .collect())
     }
-
     pub fn write_single_register(&mut self, address: u16, value: u16) -> Result<(), ModbusError> {
-        let request = request_frame(self.slave_id, 0x06, address, value);
-        self.exchange(&request, 0x06, |port, prefix, received| {
-            let mut tail = [0_u8; 6];
-            read_captured(port, &mut tail, received)?;
-            let mut response = Vec::with_capacity(8);
-            response.extend_from_slice(prefix);
-            response.extend_from_slice(&tail);
-            verify_crc(&response)?;
-            if response != request {
-                return Err(ModbusError::InvalidResponse(
-                    "FC06 回显内容与请求不一致".into(),
-                ));
-            }
-            Ok(())
-        })
+        let request = request_payload(self.slave_id, 0x06, address, value);
+        self.exchange(&request, 0x06)?;
+        Ok(())
     }
-
-    fn exchange<T>(
-        &mut self,
-        request: &[u8],
-        function: u8,
-        read_success: impl FnOnce(&mut dyn SerialPort, &[u8; 2], &mut Vec<u8>) -> Result<T, ModbusError>,
-    ) -> Result<T, ModbusError> {
+    fn exchange(&mut self, payload: &[u8], function: u8) -> Result<Vec<u8>, ModbusError> {
         self.capture_transaction
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.wait_for_inter_frame_gap();
         self.received.clear();
+        let request = match self.protocol {
+            Protocol::Ascii => ascii_frame(payload),
+            Protocol::Rtu => {
+                let mut bytes = payload.to_vec();
+                bytes.extend_from_slice(&modbus_crc(payload).to_le_bytes());
+                bytes
+            }
+        };
+        let timeout = self.port.timeout();
         let result = (|| {
             self.port.clear(ClearBuffer::Input)?;
-            self.port.write_all(request)?;
+            self.port.write_all(&request)?;
             self.port.flush()?;
-
-            let mut prefix = [0_u8; 2];
-            read_captured(self.port.as_mut(), &mut prefix, &mut self.received)?;
-            if prefix[0] != self.slave_id {
+            let response = match self.protocol {
+                Protocol::Ascii => {
+                    // Bound the entire frame so noise cannot indefinitely extend a cancelled scan.
+                    let deadline = Instant::now() + timeout;
+                    loop {
+                        let remaining = deadline.saturating_duration_since(Instant::now());
+                        if remaining.is_zero() {
+                            return Err(std::io::Error::from(std::io::ErrorKind::TimedOut).into());
+                        }
+                        self.port.set_timeout(remaining)?;
+                        let mut byte = [0];
+                        read_captured(self.port.as_mut(), &mut byte, &mut self.received)?;
+                        if self.received.len() == 1 && byte[0] != b':' {
+                            return Err(ModbusError::InvalidResponse("ASCII 帧缺少冒号".into()));
+                        }
+                        if byte[0] == b'\n' {
+                            break;
+                        }
+                        if self.received.len() >= 513 {
+                            return Err(ModbusError::InvalidResponse("ASCII 帧过长".into()));
+                        }
+                    }
+                    decode_ascii(&self.received)?
+                }
+                Protocol::Rtu => {
+                    let mut prefix = [0; 2];
+                    read_captured(self.port.as_mut(), &mut prefix, &mut self.received)?;
+                    if prefix[0] != self.slave_id {
+                        return Err(ModbusError::SlaveMismatch {
+                            expected: self.slave_id,
+                            actual: prefix[0],
+                        });
+                    }
+                    if prefix[1] != function && prefix[1] != function | 0x80 {
+                        return Err(ModbusError::FunctionMismatch {
+                            expected: function,
+                            actual: prefix[1],
+                        });
+                    }
+                    let tail_len = if prefix[1] == function | 0x80 {
+                        3
+                    } else if prefix[1] == 0x03 {
+                        let mut count = [0];
+                        read_captured(self.port.as_mut(), &mut count, &mut self.received)?;
+                        if count[0] as u16 != u16::from_be_bytes([payload[4], payload[5]]) * 2 {
+                            return Err(ModbusError::InvalidResponse(
+                                "FC03 字节数与请求不一致".into(),
+                            ));
+                        }
+                        count[0] as usize + 2
+                    } else if prefix[1] == 0x06 {
+                        6
+                    } else {
+                        return Err(ModbusError::FunctionMismatch {
+                            expected: function,
+                            actual: prefix[1],
+                        });
+                    };
+                    let mut tail = vec![0; tail_len];
+                    read_captured(self.port.as_mut(), &mut tail, &mut self.received)?;
+                    verify_crc(&self.received)?;
+                    self.received[..self.received.len() - 2].to_vec()
+                }
+            };
+            if response[0] != self.slave_id {
                 return Err(ModbusError::SlaveMismatch {
                     expected: self.slave_id,
-                    actual: prefix[0],
+                    actual: response[0],
                 });
             }
-            if prefix[1] == function | 0x80 {
-                let mut tail = [0_u8; 3];
-                read_captured(self.port.as_mut(), &mut tail, &mut self.received)?;
-                let response = [prefix[0], prefix[1], tail[0], tail[1], tail[2]];
-                verify_crc(&response)?;
+            if response[1] == function | 0x80 {
+                if response.len() != 3 {
+                    return Err(ModbusError::InvalidResponse("异常响应长度错误".into()));
+                }
                 return Err(ModbusError::Exception {
                     function,
-                    code: tail[0],
+                    code: response[2],
                 });
             }
-            if prefix[1] != function {
+            if response[1] != function {
                 return Err(ModbusError::FunctionMismatch {
                     expected: function,
-                    actual: prefix[1],
+                    actual: response[1],
                 });
             }
-            read_success(self.port.as_mut(), &prefix, &mut self.received)
+            if function == 0x03 {
+                let count = u16::from_be_bytes([payload[4], payload[5]]) as usize;
+                if response.len() != 3 + count * 2 || response[2] as usize != count * 2 {
+                    return Err(ModbusError::InvalidResponse(
+                        "FC03 字节数与请求不一致".into(),
+                    ));
+                }
+            } else if function == 0x06 && response != payload {
+                return Err(ModbusError::InvalidResponse(
+                    "FC06 回显内容与请求不一致".into(),
+                ));
+            }
+            Ok(response)
         })();
+        let restored = self.port.set_timeout(timeout).map_err(ModbusError::from);
+        let result = result.and_then(|response| restored.map(|()| response));
         if let Some((recorder, source)) = &self.capture {
             recorder.emit(
                 source,
-                "modbus-rtu",
+                self.protocol.label(),
                 "event",
                 self.capture_transaction
                     .load(std::sync::atomic::Ordering::Relaxed),
                 &[],
                 &format!(
-                    "FC{function:02X} request={:02X?} result={:?}",
-                    request,
+                    "FC{function:02X} request={request:02X?} result={:?}",
                     result
                         .as_ref()
                         .map(|_| "success")
-                        .map_err(|e: &ModbusError| e.to_string())
+                        .map_err(|e| e.to_string())
                 ),
             );
         }
@@ -354,12 +430,55 @@ impl RtuClient {
     }
 }
 
-fn request_frame(slave_id: u8, function: u8, address: u16, value: u16) -> Vec<u8> {
+fn ascii_frame(payload: &[u8]) -> Vec<u8> {
+    let lrc = payload
+        .iter()
+        .fold(0u8, |sum, byte| sum.wrapping_add(*byte))
+        .wrapping_neg();
+    let mut frame = String::from(":");
+    for byte in payload.iter().chain(std::iter::once(&lrc)) {
+        use std::fmt::Write;
+        write!(frame, "{byte:02X}").unwrap();
+    }
+    frame.push_str("\r\n");
+    frame.into_bytes()
+}
+fn decode_ascii(frame: &[u8]) -> Result<Vec<u8>, ModbusError> {
+    if frame.len() < 9
+        || frame.len() > 513
+        || frame[0] != b':'
+        || !frame.ends_with(b"\r\n")
+        || !(frame.len() - 3).is_multiple_of(2)
+    {
+        return Err(ModbusError::InvalidResponse(
+            "ASCII 帧长度或结束符错误".into(),
+        ));
+    }
+    let mut bytes = Vec::new();
+    for pair in frame[1..frame.len() - 2].chunks_exact(2) {
+        match (
+            (pair[0] as char).to_digit(16),
+            (pair[1] as char).to_digit(16),
+        ) {
+            (Some(h), Some(l)) => bytes.push((h * 16 + l) as u8),
+            _ => {
+                return Err(ModbusError::InvalidResponse(
+                    "ASCII 包含非十六进制字符".into(),
+                ))
+            }
+        }
+    }
+    if bytes.iter().fold(0u8, |sum, byte| sum.wrapping_add(*byte)) != 0 {
+        return Err(ModbusError::Lrc);
+    }
+    bytes.pop();
+    Ok(bytes)
+}
+
+fn request_payload(slave_id: u8, function: u8, address: u16, value: u16) -> Vec<u8> {
     let mut frame = vec![slave_id, function];
     frame.extend_from_slice(&address.to_be_bytes());
     frame.extend_from_slice(&value.to_be_bytes());
-    let crc = modbus_crc(&frame);
-    frame.extend_from_slice(&crc.to_le_bytes());
     frame
 }
 

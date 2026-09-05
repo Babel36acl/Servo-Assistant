@@ -1,4 +1,31 @@
-use serde::Serialize;
+use crate::{modbus::Protocol, profile::ParitySetting};
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SerialMode {
+    pub protocol: Protocol,
+    pub parity: ParitySetting,
+    pub stop_bits: u8,
+}
+
+pub fn modes(preferred: SerialMode) -> Vec<SerialMode> {
+    let mut result = vec![preferred];
+    for protocol in [Protocol::Rtu, Protocol::Ascii] {
+        for parity in [ParitySetting::Even, ParitySetting::None, ParitySetting::Odd] {
+            let mode = SerialMode {
+                protocol,
+                parity,
+                stop_bits: 1,
+            };
+            if !result.contains(&mode) {
+                result.push(mode);
+            }
+        }
+    }
+    result
+}
+
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Mutex,
@@ -11,6 +38,7 @@ pub struct DiscoveryStatus {
     pub total: usize,
     pub slave_id: Option<u8>,
     pub baud_rate: Option<u32>,
+    pub serial_mode: Option<SerialMode>,
     pub found: bool,
     pub cancelled: bool,
 }
@@ -67,22 +95,23 @@ pub fn candidates(
 
 pub fn scan(
     control: &DiscoveryControl,
-    candidates: &[(u32, u8)],
-    mut probe: impl FnMut(u32, u8) -> Result<bool, String>,
+    candidates: &[(u32, u8, SerialMode)],
+    mut probe: impl FnMut(u32, u8, SerialMode) -> Result<bool, String>,
 ) -> Result<DiscoveryStatus, String> {
     let mut status = DiscoveryStatus {
         total: candidates.len(),
         ..Default::default()
     };
-    for &(baud, slave) in candidates {
+    for &(baud, slave, mode) in candidates {
         if control.cancel.load(Ordering::SeqCst) {
             status.cancelled = true;
             break;
         }
+        status.serial_mode = Some(mode);
         status.slave_id = Some(slave);
         status.baud_rate = Some(baud);
         *control.status.lock().map_err(|_| "探测状态锁已损坏")? = status.clone();
-        let found = probe(baud, slave)?;
+        let found = probe(baud, slave, mode)?;
         status.completed += 1;
         if control.cancel.load(Ordering::SeqCst) {
             status.cancelled = true;
@@ -100,6 +129,44 @@ pub fn scan(
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn scan(
+        control: &DiscoveryControl,
+        candidates: &[(u32, u8)],
+        mut probe: impl FnMut(u32, u8) -> Result<bool, String>,
+    ) -> Result<DiscoveryStatus, String> {
+        let mode = SerialMode {
+            protocol: Protocol::Rtu,
+            parity: ParitySetting::Even,
+            stop_bits: 1,
+        };
+        super::scan(
+            control,
+            &candidates
+                .iter()
+                .map(|&(b, s)| (b, s, mode))
+                .collect::<Vec<_>>(),
+            |b, s, _| probe(b, s),
+        )
+    }
+    #[test]
+    fn six_modes_include_ascii_and_prefer_current() {
+        let preferred = SerialMode {
+            protocol: Protocol::Ascii,
+            parity: ParitySetting::Odd,
+            stop_bits: 1,
+        };
+        let list = modes(preferred);
+        assert_eq!(list.len(), 6);
+        assert_eq!(list[0], preferred);
+        assert_eq!(
+            modes(SerialMode {
+                stop_bits: 2,
+                ..preferred
+            })
+            .len(),
+            7
+        );
+    }
     #[test]
     fn ordering_and_limits() {
         assert_eq!(

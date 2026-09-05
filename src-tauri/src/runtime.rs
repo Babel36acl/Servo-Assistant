@@ -1,6 +1,8 @@
 use crate::audit::{now_ms, AuditEntry, AuditStore, AuditStoreError};
 use crate::discovery::{self, DiscoveryControl, DiscoveryStatus};
-use crate::modbus::{CommunicationSettings, CommunicationStats, ModbusError, RtuClient};
+use crate::modbus::{
+    CommunicationSettings, CommunicationStats, ModbusError, Protocol, SerialClient,
+};
 use crate::profile::{
     decode_value, encode_value, Access, OperationDefinition, OperationSet, ParameterDefinition,
     ParitySetting, ProfileError, RiskLevel, ServoProfile, StatusDefinition,
@@ -94,7 +96,7 @@ struct Runtime {
 
 enum Session {
     Simulator(SimulatorDevice),
-    Serial(RtuClient),
+    Serial(SerialClient),
 }
 
 impl Session {
@@ -244,9 +246,49 @@ pub enum ConnectionMode {
     Serial,
 }
 
+#[derive(Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ConnectionPreset {
+    #[default]
+    Profile,
+    P300,
+}
+impl ConnectionRequest {
+    fn rates(&self, profile: &ServoProfile) -> Vec<u32> {
+        if self.preset == ConnectionPreset::P300 {
+            vec![4800, 9600, 19200, 38400, 57600, 115200]
+        } else {
+            profile.transport.allowed_baud_rates.clone()
+        }
+    }
+    fn validate(&self, profile: &ServoProfile) -> Result<(), String> {
+        let max = if self.preset == ConnectionPreset::P300 {
+            32
+        } else {
+            247
+        };
+        if !(1..=max).contains(&self.slave_id) {
+            return Err(format!("站号必须为 1..{max}"));
+        }
+        if !self.rates(profile).contains(&self.baud_rate) || self.baud_rate == 0 {
+            return Err("波特率不属于当前通讯预设".into());
+        }
+        if !matches!(self.stop_bits, 1 | 2)
+            || (self.preset == ConnectionPreset::P300 && self.stop_bits != 1)
+        {
+            return Err("当前通讯预设不支持该停止位".into());
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectionRequest {
+    #[serde(default)]
+    pub protocol: Protocol,
+    #[serde(default)]
+    pub preset: ConnectionPreset,
     pub mode: ConnectionMode,
     pub port_name: Option<String>,
     pub slave_id: u8,
@@ -469,23 +511,30 @@ pub async fn discover_device(
         let profile = runtime.profile.as_ref().ok_or("请先导入设备 Profile")?;
         let mut connection = request.connection;
         if !matches!(connection.mode, ConnectionMode::Serial) { return Err("自动查找仅适用于真实串口".into()); }
-        let candidates = discovery::candidates(request.start_slave, request.end_slave, connection.slave_id, connection.baud_rate, &profile.transport.allowed_baud_rates)?;
+        connection.validate(profile)?;
+        if connection.preset == ConnectionPreset::P300 && request.end_slave > 32 { return Err("P300 站号范围为 1..32".into()); }
+        let pairs = discovery::candidates(request.start_slave, request.end_slave, connection.slave_id, connection.baud_rate, &connection.rates(profile))?;
+        let preferred = discovery::SerialMode { protocol: connection.protocol, parity: connection.parity, stop_bits: connection.stop_bits };
+        let candidates = discovery::modes(preferred).into_iter().flat_map(|mode| pairs.iter().map(move |&(baud, slave)| (baud, slave, mode))).collect::<Vec<_>>();
         let address = profile.statuses.first().map(|item| item.address)
             .or_else(|| profile.parameters.first().map(|item| item.address)).ok_or("Profile 没有可读取的地址")?;
-        let mut client: Option<(u32, RtuClient)> = None;
-        let result = discovery::scan(&worker_control, &candidates, |baud, slave| {
-            if client.as_ref().is_none_or(|(rate, _)| *rate != baud) {
+        let mut client: Option<(u32, discovery::SerialMode, SerialClient)> = None;
+        let result = discovery::scan(&worker_control, &candidates, |baud, slave, mode| {
+            if client.as_ref().is_none_or(|(rate, current, _)| *rate != baud || *current != mode) {
                 // Close the previous baud-rate handle before reopening the same port.
                 client = None;
+                connection.protocol = mode.protocol;
+                connection.parity = mode.parity;
+                connection.stop_bits = mode.stop_bits;
                 connection.baud_rate = baud;
                 connection.slave_id = slave;
-                client = Some((baud, open_serial_client(&connection, &runtime.recorder).map_err(|error| error.to_string())?));
+                client = Some((baud, mode, open_serial_client(&connection, &runtime.recorder).map_err(|error| error.to_string())?));
             }
-            client.as_mut().unwrap().1.detect_slave(slave, address).map_err(|error| error.to_string())
+            client.as_mut().unwrap().2.detect_slave(slave, address).map_err(|error| error.to_string())
         });
         drop(client);
         let detail = match &result {
-            Ok(status) => format!("port={:?} checked={}/{} found={} cancelled={} slave={:?} baud={:?} address=0x{address:04X}", connection.port_name, status.completed, status.total, status.found, status.cancelled, status.slave_id, status.baud_rate),
+            Ok(status) => format!("port={:?} checked={}/{} found={} cancelled={} slave={:?} baud={:?} mode={:?} address=0x{address:04X}", connection.port_name, status.completed, status.total, status.found, status.cancelled, status.slave_id, status.baud_rate, status.serial_mode),
             Err(error) => error.clone(),
         };
         runtime.push_audit("communication.discovery", if result.is_ok() { "completed" } else { "failed" }, &detail).map_err(|error| error.to_string())?;
@@ -541,7 +590,7 @@ pub async fn list_serial_ports() -> Result<Vec<SerialPortInfo>, String> {
 fn open_serial_client(
     request: &ConnectionRequest,
     recorder: &crate::recording::Recorder,
-) -> Result<RtuClient, RuntimeError> {
+) -> Result<SerialClient, RuntimeError> {
     let port_name = request
         .port_name
         .as_deref()
@@ -576,7 +625,8 @@ fn open_serial_client(
         + u32::from(!matches!(request.parity, ParitySetting::None))
         + request.stop_bits as u32;
     Ok(
-        RtuClient::new(port, request.slave_id, request.baud_rate, bits_per_char)
+        SerialClient::new(port, request.slave_id, request.baud_rate, bits_per_char)
+            .with_protocol(request.protocol)
             .with_recorder(recorder.clone()),
     )
 }
@@ -591,21 +641,9 @@ pub async fn connect_device(
             return Err(RuntimeError::AlreadyConnected);
         }
         let profile = runtime.profile.clone().ok_or(RuntimeError::NoProfile)?;
-        if !(1..=247).contains(&request.slave_id) {
-            return Err(RuntimeError::Profile(ProfileError::Validation(
-                "站号必须为 1..247".into(),
-            )));
-        }
-        if !profile
-            .transport
-            .allowed_baud_rates
-            .contains(&request.baud_rate)
-        {
-            return Err(RuntimeError::Profile(ProfileError::Validation(format!(
-                "配置不允许波特率 {}",
-                request.baud_rate
-            ))));
-        }
+        request
+            .validate(&profile)
+            .map_err(|error| RuntimeError::Profile(ProfileError::Validation(error)))?;
         let session = match request.mode {
             ConnectionMode::Simulator => Session::Simulator(SimulatorDevice::new(&profile)?),
             ConnectionMode::Serial => {
@@ -1394,6 +1432,27 @@ mod tests {
         Access, DeviceInfo, ParameterDefinition, RawType, RiskLevel, StatusDefinition,
         TransportProfile,
     };
+
+    #[test]
+    fn serial_presets_validate_limits_and_preserve_legacy_requests() {
+        let profile = test_profile();
+        let mut request: ConnectionRequest = serde_json::from_value(serde_json::json!({"mode":"serial","portName":"TEST","slaveId":1,"baudRate":19200,"parity":"even","stopBits":1,"timeoutMs":200})).unwrap();
+        assert_eq!(request.protocol, Protocol::Rtu);
+        request.slave_id = 247;
+        assert!(request.validate(&profile).is_ok());
+        request.preset = ConnectionPreset::P300;
+        assert!(request.validate(&profile).is_err());
+        request.slave_id = 32;
+        for rate in [4800, 9600, 19200, 38400, 57600, 115200] {
+            request.baud_rate = rate;
+            assert!(request.validate(&profile).is_ok());
+        }
+        request.baud_rate = 0;
+        assert!(request.validate(&profile).is_err());
+        request.baud_rate = 19200;
+        request.stop_bits = 2;
+        assert!(request.validate(&profile).is_err());
+    }
 
     fn test_profile() -> ServoProfile {
         ServoProfile {

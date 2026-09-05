@@ -6,6 +6,9 @@ import CommunicationWorkbench from "./components/CommunicationWorkbench.vue";
 import ScopeChart, { type ScopeSeries } from "./components/ScopeChart.vue";
 import type {
   AuditEntry,
+  SerialProtocol,
+  SerialMode,
+  ConnectionPreset,
   CommunicationStats,
   DiscoveryStatus,
   ConnectionMode,
@@ -29,7 +32,28 @@ const slaveId = ref(1);
 const baudRate = ref(19200);
 const parity = ref<Parity>("even");
 const stopBits = ref(1);
+const protocol = ref<SerialProtocol>("rtu");
+const connectionPreset = ref<ConnectionPreset>("profile");
+const stationMax = computed(() => connectionPreset.value === "p300" ? 32 : 247);
+const baudRates = computed(() => connectionPreset.value === "p300" ? [4800, 9600, 19200, 38400, 57600, 115200] : profile.value?.transport?.allowedBaudRates ?? [19200]);
+function serialModeLabel(mode: SerialMode) {
+  return `${mode.protocol.toUpperCase()} · 8${{ none: "N", even: "E", odd: "O" }[mode.parity]}${mode.stopBits}`;
+}
+function changeConnectionPreset() {
+  discoveryStart.value = 1;
+  discoveryEnd.value = stationMax.value;
+  slaveId.value = connectionPreset.value === "p300" ? 1 : profile.value?.transport.defaultSlaveId ?? 1;
+  baudRate.value = baudRates.value.includes(baudRate.value) ? baudRate.value : baudRates.value[0];
+  protocol.value = connectionPreset.value === "p300" ? "rtu" : profile.value?.transport.kind === "modbus-ascii" ? "ascii" : "rtu";
+  parity.value = connectionPreset.value === "p300" ? "even" : profile.value?.transport.parity ?? "even";
+  stopBits.value = connectionPreset.value === "p300" ? 1 : profile.value?.transport.stopBits ?? 1;
+}
 const timeoutMs = ref(800);
+const connectionBlockedReason = computed(() => {
+  if (!profile.value) return "请先导入设备 Profile（JSON），连接和查找需要其中的寄存器地址。";
+  if (connectionMode.value === "serial" && !portName.value) return "请选择串口，再连接或自动查找。";
+  return "";
+});
 const values = ref<Record<string, ParameterValue>>({});
 const drafts = ref<Record<string, number>>({});
 const statuses = ref<StatusValue[]>([]);
@@ -79,15 +103,15 @@ async function pollDiscovery() {
 
 async function discoverConnection() {
   if (busy.value || connected.value || !profile.value || !portName.value) return;
-  if (![discoveryStart.value, discoveryEnd.value, discoveryTimeout.value].every(Number.isInteger) || discoveryStart.value < 1 || discoveryEnd.value > 247 || discoveryStart.value > discoveryEnd.value || discoveryTimeout.value < 100 || discoveryTimeout.value > 2000) {
-    showError("站号范围须为 1..247，探测超时须为 100..2000 ms"); return;
+  if (![discoveryStart.value, discoveryEnd.value, discoveryTimeout.value].every(Number.isInteger) || discoveryStart.value < 1 || discoveryEnd.value > stationMax.value || discoveryStart.value > discoveryEnd.value || discoveryTimeout.value < 100 || discoveryTimeout.value > 2000) {
+    showError(`站号范围须为 1..${stationMax.value}，探测超时须为 100..2000 ms`); return;
   }
   busy.value = true;
   discoveryActive.value = true;
   discovery.value = null;
   discoveryMessage.value = "正在查找";
   errorMessage.value = "";
-  const resultPromise = servoApi.discover({ connection: { mode: 'serial', portName: portName.value, slaveId: slaveId.value, baudRate: baudRate.value, parity: parity.value, stopBits: stopBits.value, timeoutMs: discoveryTimeout.value }, startSlave: discoveryStart.value, endSlave: discoveryEnd.value });
+  const resultPromise = servoApi.discover({ connection: { protocol: protocol.value, preset: connectionPreset.value, mode: 'serial', portName: portName.value, slaveId: slaveId.value, baudRate: baudRate.value, parity: parity.value, stopBits: stopBits.value, timeoutMs: discoveryTimeout.value }, startSlave: discoveryStart.value, endSlave: discoveryEnd.value });
   discoveryTimer = window.setTimeout(pollDiscovery, 250);
   try {
     const result = await resultPromise;
@@ -95,7 +119,8 @@ async function discoverConnection() {
     if (result.found && result.slaveId !== null && result.baudRate !== null) {
       slaveId.value = result.slaveId;
       baudRate.value = result.baudRate;
-      discoveryMessage.value = `已找到：站号 ${result.slaveId}，${result.baudRate} baud。参数已填入，可点击连接。`;
+      if (result.serialMode) { protocol.value = result.serialMode.protocol; parity.value = result.serialMode.parity; stopBits.value = result.serialMode.stopBits; }
+      discoveryMessage.value = `已找到：站号 ${result.slaveId}，${result.baudRate} baud，${serialModeLabel({ protocol: protocol.value, parity: parity.value, stopBits: stopBits.value })}。参数已填入，可点击连接。`;
     } else discoveryMessage.value = result.cancelled ? "查找已取消，串口已释放" : "未找到。请检查串口、Profile、校验位、停止位，或增大探测超时后重试。";
   } catch (error) { discoveryMessage.value = "查找失败"; showError(error); }
   finally { window.clearTimeout(discoveryTimer); discoveryActive.value = false; busy.value = false; await refreshAudit(); }
@@ -212,6 +237,10 @@ async function loadProfileJson(json: string) {
     if (profile.value) {
       slaveId.value = profile.value.transport.defaultSlaveId;
       baudRate.value = profile.value.transport.defaultBaudRate;
+      connectionPreset.value = "profile";
+      discoveryStart.value = 1;
+      discoveryEnd.value = 247;
+      protocol.value = profile.value.transport.kind === "modbus-ascii" ? "ascii" : "rtu";
       parity.value = profile.value.transport.parity;
       stopBits.value = profile.value.transport.stopBits;
       timeoutMs.value = profile.value.transport.timeoutMs;
@@ -257,6 +286,7 @@ async function refreshPorts() {
 
 async function connect() {
   if (busy.value) return;
+  if (connectionBlockedReason.value) { showError(connectionBlockedReason.value); return; }
   busy.value = true;
   errorMessage.value = "";
   try {
@@ -266,6 +296,8 @@ async function connect() {
       portName: connectionMode.value === "serial" ? portName.value || null : null,
       slaveId: slaveId.value,
       baudRate: baudRate.value,
+      protocol: protocol.value,
+      preset: connectionPreset.value,
       parity: parity.value,
       stopBits: stopBits.value,
       timeoutMs: timeoutMs.value,
@@ -618,7 +650,7 @@ onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearT
           <label>运行模式
             <select v-model="connectionMode" :disabled="connected || busy">
               <option value="simulator">配置模拟器（安全演练）</option>
-              <option value="serial">真实 Modbus RTU</option>
+              <option value="serial">真实 Modbus 串口</option>
             </select>
           </label>
           <template v-if="connectionMode === 'serial'">
@@ -632,34 +664,53 @@ onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearT
               </div>
             </label>
           </template>
+          <label>通讯预设
+            <select v-model="connectionPreset" :disabled="connected || busy" @change="changeConnectionPreset">
+              <option value="profile">使用 Profile</option><option value="p300">P300–P302 手册预设</option>
+            </select>
+          </label>
+          <p v-if="connectionPreset === 'p300'" class="field-help">站号 1～32 · P302 默认 RTU 8E1。P301=0 时 MODBUS 关闭，须在驱动器侧启用后查找。</p>
           <div class="field-grid">
-            <label>站号<input v-model.number="slaveId" type="number" min="1" max="247" :disabled="connected || busy" /></label>
+            <label>站号<input v-model.number="slaveId" type="number" min="1" :max="stationMax" :disabled="connected || busy" /></label>
             <label>波特率
               <select v-model.number="baudRate" :disabled="connected || busy">
-                <option v-for="baud in profile?.transport.allowedBaudRates ?? [19200]" :key="baud" :value="baud">{{ baud }}</option>
+                <option v-for="baud in baudRates" :key="baud" :value="baud">{{ baud }}</option>
               </select>
+            </label>
+            <label>协议
+              <select v-model="protocol" :disabled="connected || busy"><option value="rtu">Modbus RTU</option><option value="ascii">Modbus ASCII</option></select>
+            </label>
+            <label>停止位
+              <select v-model.number="stopBits" :disabled="connected || busy || connectionPreset === 'p300'"><option :value="1">1</option><option :value="2">2</option></select>
             </label>
             <label>校验
               <select v-model="parity" :disabled="connected || busy">
-                <option value="none">无</option><option value="even">偶</option><option value="odd">奇</option>
+                <option value="none">N · 无校验</option><option value="even">E · 偶校验</option><option value="odd">O · 奇校验</option>
               </select>
             </label>
             <label>超时 ms<input v-model.number="timeoutMs" type="number" min="100" max="10000" :disabled="connected || busy" /></label>
           </div>
-          <button v-if="!connected" class="primary full" :disabled="busy || !profile" @click="connect">连接</button>
+          <div v-if="!connected && connectionBlockedReason" class="connection-requirement" role="status">
+            <p>{{ connectionBlockedReason }}</p>
+            <label v-if="!profile" class="file-button full" :class="{ disabled: busy }">
+              导入设备 Profile
+              <input type="file" accept="application/json,.json" :disabled="busy" @change="handleProfileFile" />
+            </label>
+          </div>
+          <button v-if="!connected" class="primary full" :disabled="busy || !!connectionBlockedReason" :title="connectionBlockedReason" @click="connect">连接</button>
           <template v-if="connectionMode === 'serial'">
-            <fieldset :disabled="busy || connected">
-              <legend>自动查找站号与波特率</legend>
+            <fieldset class="discovery-settings" :disabled="busy || connected">
+              <legend>自动查找通讯配置</legend>
               <div class="field-grid">
-                <label>起始站号<input v-model.number="discoveryStart" type="number" min="1" max="247" /></label>
-                <label>结束站号<input v-model.number="discoveryEnd" type="number" min="1" max="247" /></label>
+                <label>起始站号<input v-model.number="discoveryStart" type="number" min="1" :max="stationMax" /></label>
+                <label>结束站号<input v-model.number="discoveryEnd" type="number" min="1" :max="stationMax" /></label>
                 <label>探测超时 ms<input v-model.number="discoveryTimeout" type="number" min="100" max="2000" /></label>
               </div>
-              <p>保持当前校验位和停止位，优先当前配置，再遍历 Profile 波特率。只读探测，找到首个响应设备后停止。</p>
-              <button class="secondary full" :disabled="!profile || !portName" @click="discoverConnection">自动查找</button>
+              <p class="field-help">优先当前配置，再查找 RTU / ASCII 的 8E1、8N1、8O1。每个配置连续两次只读响应后确认。</p>
+              <button class="secondary full" :disabled="!!connectionBlockedReason" :title="connectionBlockedReason" @click="discoverConnection">自动查找</button>
             </fieldset>
-            <p v-if="discoveryActive && discovery">{{ discovery.completed }}/{{ discovery.total }} · 站号 {{ discovery.slaveId }} · {{ discovery.baudRate }} baud</p>
-            <p>{{ discoveryMessage }}</p>
+            <p v-if="discoveryActive && discovery">{{ discovery.completed }}/{{ discovery.total }} · 站号 {{ discovery.slaveId }} · {{ discovery.baudRate }} baud · {{ discovery.serialMode ? serialModeLabel(discovery.serialMode) : '' }}</p>
+            <p v-if="discoveryMessage" class="field-help" role="status">{{ discoveryMessage }}</p>
             <button v-if="discoveryActive" class="secondary full" @click="cancelDiscovery">取消查找</button>
           </template>
           <button v-if="connected" class="danger-outline full" :disabled="busy" @click="disconnect">断开连接</button>
@@ -698,10 +749,10 @@ onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearT
         <section class="panel communication-panel">
           <h2>通讯与采集设置</h2>
           <fieldset :disabled="busy" class="communication-controls">
-            <label>CRC / 超时额外重试次数<input v-model.number="retries" type="number" min="0" max="3" /></label>
+            <label>校验 / 超时额外重试次数<input v-model.number="retries" type="number" min="0" max="3" /></label>
             <label>每组读取寄存器上限<input v-model.number="maxRegisters" type="number" min="1" max="100" /></label>
             <label>轮询等待间隔（ms）<input v-model.number="sampleInterval" type="number" min="50" max="60000" step="50" @change="normalizeSampleInterval" /></label>
-            <label><input v-model="pollingEnabled" type="checkbox" /> 状态轮询</label>
+            <label class="toggle-field"><input v-model="pollingEnabled" type="checkbox" /> 状态轮询</label>
             <button class="secondary" @click="saveCommunicationSettings">应用通讯设置</button>
             <label>稳定性测试轮数<input v-model.number="testCycles" type="number" min="1" max="1000" /></label>
             <button class="secondary" :disabled="!connected || probeRange.length < 2" @click="runStabilityTest">短帧 / 长帧只读测试</button>
@@ -709,7 +760,7 @@ onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearT
           <p>设置仅保留于当前应用会话。间隔是每次状态读取完成后的等待时间；暂停曲线采集不停止通讯。</p>
           <p>稳定性测试使用 Profile 中最长连续状态区：{{ probeRange.length ? hex(probeRange[0].address) : '—' }}，短帧 1 / 长帧 {{ probeRange.length }} 个寄存器；长帧对照不拆组。执行期间暂停日常轮询。</p>
           <p v-if="communicationError" class="banner error">通讯异常：{{ communicationError }}</p>
-          <p v-if="communicationStats">本次串口连接统计（模拟器不计）：读取 {{ communicationStats.transactions }} · 首次成功 {{ communicationStats.firstSuccesses }} · 重试恢复 {{ communicationStats.recovered }} · 最终失败 {{ communicationStats.failed }} · CRC {{ communicationStats.crcErrors }} · 超时 {{ communicationStats.timeouts }} · 重试 {{ communicationStats.retries }}</p>
+          <p v-if="communicationStats">本次串口连接统计（模拟器不计）：读取 {{ communicationStats.transactions }} · 首次成功 {{ communicationStats.firstSuccesses }} · 重试恢复 {{ communicationStats.recovered }} · 最终失败 {{ communicationStats.failed }} · CRC {{ communicationStats.crcErrors }} · LRC {{ communicationStats.lrcErrors }} · 超时 {{ communicationStats.timeouts }} · 重试 {{ communicationStats.retries }}</p>
           <p>状态更新：{{ statusUpdatedAt ? new Date(statusUpdatedAt).toLocaleTimeString() : '尚未读取' }} · {{ !connected ? '已断开' : !pollingEnabled ? '轮询已暂停，保留旧值' : communicationError ? '读取失败，保留旧值' : '轮询已启用' }}</p>
           <p v-if="communicationStats">最近成功：{{ communicationStats.lastSuccessMs ? new Date(communicationStats.lastSuccessMs).toLocaleString() : '—' }}</p>
           <details v-if="communicationStats?.lastFailure"><summary>最近失败地址与响应帧</summary><pre>{{ communicationStats.lastFailure }}</pre></details>
@@ -717,7 +768,7 @@ onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearT
           <button v-if="readActive || testActive" class="secondary" :disabled="cancelRequested" @click="cancelRequested = true">{{ cancelRequested ? '正在等待当前事务结束' : '取消当前读取 / 测试' }}</button>
           <table v-if="testResults.length">
             <thead><tr><th>帧</th><th>已测</th><th>首次成功率</th><th>重试恢复</th><th>最终失败</th><th>累计耗时</th></tr></thead>
-            <tbody><tr v-for="row in testResults" :key="row.label"><td>{{ row.label }}（{{ 5 + row.count * 2 }} 字节）</td><td>{{ row.total }}</td><td>{{ row.total ? (100 * row.first / row.total).toFixed(1) : '—' }}%</td><td>{{ row.recovered }}</td><td>{{ row.failed }}</td><td>{{ row.elapsed }} ms</td></tr></tbody>
+            <tbody><tr v-for="row in testResults" :key="row.label"><td>{{ row.label }}（{{ protocol === 'ascii' ? 11 + row.count * 4 : 5 + row.count * 2 }} 字节）</td><td>{{ row.total }}</td><td>{{ row.total ? (100 * row.first / row.total).toFixed(1) : '—' }}%</td><td>{{ row.recovered }}</td><td>{{ row.failed }}</td><td>{{ row.elapsed }} ms</td></tr></tbody>
           </table>
         </section>
 

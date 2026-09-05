@@ -14,12 +14,13 @@ pub struct RecordedPort {
     pub recorder: Recorder,
     pub transaction: Arc<AtomicU64>,
     pub source: String,
+    pub protocol: &'static str,
 }
 impl RecordedPort {
     fn log(&self, direction: &str, data: &[u8], detail: &str) {
         self.recorder.emit(
             &self.source,
-            "modbus-rtu",
+            self.protocol,
             direction,
             self.transaction.load(Ordering::Relaxed),
             data,
@@ -128,6 +129,7 @@ impl SerialPort for RecordedPort {
             recorder: self.recorder.clone(),
             transaction: self.transaction.clone(),
             source: self.source.clone(),
+            protocol: self.protocol,
         }))
     }
     fn set_break(&self) -> serialport::Result<()> {

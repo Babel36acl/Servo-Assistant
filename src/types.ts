@@ -160,6 +160,7 @@ export interface CommunicationStats {
   recovered: number;
   failed: number;
   crcErrors: number;
+  lrcErrors: number;
   timeouts: number;
   retries: number;
   lastSuccessMs: number | null;
@@ -174,6 +175,7 @@ export interface ProbeResult {
 }
 
 export interface DiscoveryStatus {
+  serialMode: SerialMode | null;
   completed: number;
   total: number;
   slaveId: number | null;
@@ -181,3 +183,7 @@ export interface DiscoveryStatus {
   found: boolean;
   cancelled: boolean;
 }
+
+export type SerialProtocol = "rtu" | "ascii";
+export type ConnectionPreset = "profile" | "p300";
+export interface SerialMode { protocol: SerialProtocol; parity: Parity; stopBits: number; }
