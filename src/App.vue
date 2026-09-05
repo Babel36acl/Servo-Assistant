@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { addressGroups } from "./communication";
 import { servoApi } from "./api";
 import ScopeChart, { type ScopeSeries } from "./components/ScopeChart.vue";
 import type {
   AuditEntry,
+  CommunicationStats,
   ConnectionMode,
   ParameterDefinition,
   ParameterValue,
@@ -29,6 +31,7 @@ const timeoutMs = ref(800);
 const values = ref<Record<string, ParameterValue>>({});
 const drafts = ref<Record<string, number>>({});
 const statuses = ref<StatusValue[]>([]);
+const statusUpdatedAt = ref<number | null>(null);
 const audit = ref<AuditEntry[]>([]);
 const comparison = ref<SnapshotDiff[]>([]);
 const selectedBatch = ref<string[]>([]);
@@ -42,6 +45,72 @@ const busy = ref(false);
 const notice = ref("请导入设备 JSON Profile");
 const errorMessage = ref("");
 let statusTimer: number | undefined;
+const pollingEnabled = ref(true);
+const communicationError = ref("");
+const retries = ref(2);
+const maxRegisters = ref(16);
+const communicationStats = ref<CommunicationStats | null>(null);
+const readActive = ref(false);
+const cancelRequested = ref(false);
+const readProgress = ref("");
+const failedGroups = ref<ParameterDefinition[][]>([]);
+const staleIds = ref(new Set<string>());
+const testActive = ref(false);
+const testCycles = ref(100);
+const testProgress = ref("");
+const testResults = ref<Array<{ label: string; count: number; total: number; first: number; recovered: number; failed: number; elapsed: number }>>([]);
+let pollInFlight: Promise<void> | null = null;
+let disposed = false;
+const probeRange = computed(() => addressGroups(profile.value?.statuses ?? [], 100).sort((a, b) => b.length - a.length)[0] ?? []);
+
+async function updateDiagnostics() {
+  try { communicationStats.value = await servoApi.communicationStats(); } catch { /* Keep the primary operation's result. */ }
+}
+
+async function applyCommunicationSettings() {
+  await servoApi.configureCommunication({ retries: retries.value, maxRegisters: maxRegisters.value });
+}
+
+async function saveCommunicationSettings() {
+  if (busy.value) return;
+  busy.value = true;
+  try { await applyCommunicationSettings(); notice.value = "通讯设置已应用（当前应用会话）"; }
+  catch (error) { showError(error); }
+  finally { busy.value = false; }
+}
+
+async function pauseForOperation() {
+  window.clearTimeout(statusTimer);
+  await pollInFlight;
+}
+
+async function runStabilityTest() {
+  if (busy.value || !connected.value || !probeRange.value.length) return;
+  if (!Number.isInteger(testCycles.value) || testCycles.value < 1 || testCycles.value > 1000) { showError("测试轮数须为 1..1000"); return; }
+  busy.value = true;
+  testActive.value = true;
+  cancelRequested.value = false;
+  testResults.value = [1, probeRange.value.length].map((count, index) => ({ label: index ? "长帧" : "短帧", count, total: 0, first: 0, recovered: 0, failed: 0, elapsed: 0 }));
+  const address = probeRange.value[0].address;
+  try {
+    await pauseForOperation();
+    await applyCommunicationSettings();
+    for (let cycle = 0; cycle < testCycles.value && !cancelRequested.value && !disposed; cycle++) {
+      for (const row of testResults.value) {
+        if (cancelRequested.value || disposed) break;
+        const result = await servoApi.probeRead(address, row.count);
+        row.total++;
+        row.elapsed += result.elapsedMs;
+        if (!result.success) { row.failed++; communicationError.value = result.error ?? "读取失败"; }
+        else { if (result.attempts === 1) row.first++; else row.recovered++; communicationError.value = ""; }
+        testProgress.value = `第 ${cycle + 1}/${testCycles.value} 轮 · ${row.label} · ${hex(address)}/${row.count}`;
+        await updateDiagnostics();
+      }
+    }
+    testProgress.value = `${cancelRequested.value ? "已取消" : "已完成"} · ${connectionMode.value === "simulator" ? "模拟器结果，不代表实机链路" : "实机只读测试"}`;
+  } catch (error) { testProgress.value = "测试中断"; showError(error); }
+  finally { testActive.value = false; busy.value = false; await refreshAudit(); scheduleStatusPoll(); }
+}
 
 const groups = computed(() => [
   "全部",
@@ -104,6 +173,12 @@ async function loadProfileJson(json: string) {
       timeoutMs.value = profile.value.transport.timeoutMs;
     }
     values.value = {};
+    staleIds.value = new Set();
+    failedGroups.value = [];
+    readProgress.value = "";
+    testResults.value = [];
+    testProgress.value = "";
+    communicationError.value = "";
     drafts.value = {};
     comparison.value = [];
     selectedBatch.value = [];
@@ -137,9 +212,11 @@ async function refreshPorts() {
 }
 
 async function connect() {
+  if (busy.value) return;
   busy.value = true;
   errorMessage.value = "";
   try {
+    await applyCommunicationSettings();
     await servoApi.connect({
       mode: connectionMode.value,
       portName: connectionMode.value === "serial" ? portName.value || null : null,
@@ -150,8 +227,11 @@ async function connect() {
       timeoutMs: timeoutMs.value,
     });
     connected.value = true;
+    communicationStats.value = null;
+    statusUpdatedAt.value = null;
     notice.value = connectionMode.value === "simulator" ? "配置模拟器已连接" : `${portName.value} 已连接`;
-    await readAll();
+    staleIds.value = new Set(profile.value?.parameters.map(item => item.parameterId));
+    await readParameterGroups(false);
     scheduleStatusPoll(0);
   } catch (error) {
     showError(error);
@@ -162,11 +242,15 @@ async function connect() {
 }
 
 async function disconnect() {
+  if (busy.value) return;
   window.clearTimeout(statusTimer);
   busy.value = true;
   try {
+    await pauseForOperation();
     await servoApi.disconnect();
     connected.value = false;
+    staleIds.value = new Set(profile.value?.parameters.map(item => item.parameterId));
+    communicationError.value = "";
     statuses.value = [];
     scopeData.value = {};
     notice.value = "设备已断开";
@@ -178,23 +262,44 @@ async function disconnect() {
   }
 }
 
-async function readAll() {
-  if (!connected.value) return;
+async function readAll(failedOnly = false) {
+  if (!connected.value || busy.value) return;
+  busy.value = true;
+  try { await readParameterGroups(failedOnly); }
+  finally { busy.value = false; scheduleStatusPoll(); }
+}
+
+async function readParameterGroups(failedOnly: boolean) {
+  readActive.value = true;
+  cancelRequested.value = false;
   errorMessage.value = "";
+  notice.value = "正在读取参数";
   try {
-    const result = await servoApi.readParameters();
-    const nextValues: Record<string, ParameterValue> = {};
-    const nextDrafts: Record<string, number> = {};
-    for (const item of result) {
-      nextValues[item.parameterId] = item;
-      nextDrafts[item.parameterId] = item.value;
+    await pauseForOperation();
+    await applyCommunicationSettings();
+    const pending = failedOnly ? [...failedGroups.value] : addressGroups(profile.value?.parameters ?? [], maxRegisters.value);
+    failedGroups.value = [...pending];
+    for (const group of pending) for (const item of group) staleIds.value.add(item.parameterId);
+    for (let index = 0; index < pending.length && !cancelRequested.value && !disposed; index++) {
+      const group = pending[index];
+      readProgress.value = `${index + 1}/${pending.length} 地址组 · ${hex(group[0].address)}/${group.length}`;
+      try {
+        const result = await servoApi.readParameters(group.map(item => item.parameterId));
+        for (const item of result) {
+          // A refresh must not discard the user's uncommitted edits.
+          const edited = values.value[item.parameterId] && drafts.value[item.parameterId] !== values.value[item.parameterId].value;
+          values.value[item.parameterId] = item;
+          if (!edited) drafts.value[item.parameterId] = item.value;
+          staleIds.value.delete(item.parameterId);
+        }
+        failedGroups.value = failedGroups.value.filter(item => item[0].parameterId !== group[0].parameterId);
+      } catch (error) { showError(error); }
     }
-    values.value = nextValues;
-    drafts.value = nextDrafts;
-    notice.value = `已读取并解码 ${result.length} 个参数`;
+    notice.value = `${cancelRequested.value ? "读取已取消" : "读取结束"}：${pending.length - failedGroups.value.length}/${pending.length} 地址组成功，${failedGroups.value.length} 组失败或未完成`;
   } catch (error) {
+    notice.value = "参数读取未完成";
     showError(error);
-  }
+  } finally { readActive.value = false; await updateDiagnostics(); await refreshAudit(); }
 }
 
 async function exportSnapshot() {
@@ -361,10 +466,14 @@ async function persistChanges() {
 
 function scheduleStatusPoll(delay = 1500) {
   window.clearTimeout(statusTimer);
-  if (!connected.value) return;
+  if (!connected.value || !pollingEnabled.value || disposed) return;
   statusTimer = window.setTimeout(async () => {
+    if (busy.value) { scheduleStatusPoll(); return; }
+    const poll = async () => {
     try {
       statuses.value = await servoApi.readStatuses();
+      statusUpdatedAt.value = Date.now();
+      communicationError.value = "";
       if (scopeRunning.value) {
         const next = { ...scopeData.value };
         for (const id of scopeChannels.value) {
@@ -375,11 +484,22 @@ function scheduleStatusPoll(delay = 1500) {
         scopeData.value = next;
       }
     } catch (error) {
-      showError(error);
+      communicationError.value = String(error);
     } finally {
-      scheduleStatusPoll(errorMessage.value ? 3000 : sampleInterval.value);
+      await updateDiagnostics();
     }
+    };
+    pollInFlight = poll();
+    await pollInFlight;
+    pollInFlight = null;
+    const interval = Number(sampleInterval.value);
+    scheduleStatusPoll(communicationError.value ? 3000 : Number.isFinite(interval) && interval >= 50 && interval <= 60000 ? interval : 250);
   }, delay);
+}
+
+watch(pollingEnabled, () => { if (!pollInFlight) scheduleStatusPoll(0); else window.clearTimeout(statusTimer); });
+function normalizeSampleInterval() {
+  if (!Number.isFinite(sampleInterval.value) || sampleInterval.value < 50 || sampleInterval.value > 60000) sampleInterval.value = 250;
 }
 
 async function refreshAudit() {
@@ -408,7 +528,7 @@ function formatTimestamp(timestampMs: number) {
 }
 
 onMounted(refreshAudit);
-onUnmounted(() => window.clearTimeout(statusTimer));
+onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearTimeout(statusTimer); });
 </script>
 
 <template>
@@ -420,7 +540,7 @@ onUnmounted(() => window.clearTimeout(statusTimer));
       </div>
       <div class="connection-pill" :class="{ online: connected }">
         <span class="status-dot"></span>
-        {{ connected ? (connectionMode === "simulator" ? "模拟器在线" : "设备在线") : "未连接" }}
+        {{ connected ? (communicationError ? '通讯异常' : connectionMode === "simulator" ? "模拟器已连接" : "串口已连接") : "未连接" }}
       </div>
     </header>
 
@@ -515,6 +635,32 @@ onUnmounted(() => window.clearTimeout(statusTimer));
           </article>
         </section>
 
+        <section class="panel communication-panel">
+          <h2>通讯与采集设置</h2>
+          <fieldset :disabled="busy" class="communication-controls">
+            <label>CRC / 超时额外重试次数<input v-model.number="retries" type="number" min="0" max="3" /></label>
+            <label>每组读取寄存器上限<input v-model.number="maxRegisters" type="number" min="1" max="100" /></label>
+            <label>轮询等待间隔（ms）<input v-model.number="sampleInterval" type="number" min="50" max="60000" step="50" @change="normalizeSampleInterval" /></label>
+            <label><input v-model="pollingEnabled" type="checkbox" /> 状态轮询</label>
+            <button class="secondary" @click="saveCommunicationSettings">应用通讯设置</button>
+            <label>稳定性测试轮数<input v-model.number="testCycles" type="number" min="1" max="1000" /></label>
+            <button class="secondary" :disabled="!connected || probeRange.length < 2" @click="runStabilityTest">短帧 / 长帧只读测试</button>
+          </fieldset>
+          <p>设置仅保留于当前应用会话。间隔是每次状态读取完成后的等待时间；暂停曲线采集不停止通讯。</p>
+          <p>稳定性测试使用 Profile 中最长连续状态区：{{ probeRange.length ? hex(probeRange[0].address) : '—' }}，短帧 1 / 长帧 {{ probeRange.length }} 个寄存器；长帧对照不拆组。执行期间暂停日常轮询。</p>
+          <p v-if="communicationError" class="banner error">通讯异常：{{ communicationError }}</p>
+          <p v-if="communicationStats">本次串口连接统计（模拟器不计）：读取 {{ communicationStats.transactions }} · 首次成功 {{ communicationStats.firstSuccesses }} · 重试恢复 {{ communicationStats.recovered }} · 最终失败 {{ communicationStats.failed }} · CRC {{ communicationStats.crcErrors }} · 超时 {{ communicationStats.timeouts }} · 重试 {{ communicationStats.retries }}</p>
+          <p>状态更新：{{ statusUpdatedAt ? new Date(statusUpdatedAt).toLocaleTimeString() : '尚未读取' }} · {{ !connected ? '已断开' : !pollingEnabled ? '轮询已暂停，保留旧值' : communicationError ? '读取失败，保留旧值' : '轮询已启用' }}</p>
+          <p v-if="communicationStats">最近成功：{{ communicationStats.lastSuccessMs ? new Date(communicationStats.lastSuccessMs).toLocaleString() : '—' }}</p>
+          <details v-if="communicationStats?.lastFailure"><summary>最近失败地址与响应帧</summary><pre>{{ communicationStats.lastFailure }}</pre></details>
+          <p>{{ readProgress }} {{ testProgress }}</p>
+          <button v-if="readActive || testActive" class="secondary" :disabled="cancelRequested" @click="cancelRequested = true">{{ cancelRequested ? '正在等待当前事务结束' : '取消当前读取 / 测试' }}</button>
+          <table v-if="testResults.length">
+            <thead><tr><th>帧</th><th>已测</th><th>首次成功率</th><th>重试恢复</th><th>最终失败</th><th>累计耗时</th></tr></thead>
+            <tbody><tr v-for="row in testResults" :key="row.label"><td>{{ row.label }}（{{ 5 + row.count * 2 }} 字节）</td><td>{{ row.total }}</td><td>{{ row.total ? (100 * row.first / row.total).toFixed(1) : '—' }}%</td><td>{{ row.recovered }}</td><td>{{ row.failed }}</td><td>{{ row.elapsed }} ms</td></tr></tbody>
+          </table>
+        </section>
+
         <section class="panel scope-panel">
           <div class="scope-toolbar">
             <div>
@@ -525,11 +671,14 @@ onUnmounted(() => window.clearTimeout(statusTimer));
               <label>采样间隔
                 <select v-model.number="sampleInterval" :disabled="!connected">
                   <option :value="200">200 ms</option>
+                  <option :value="250">250 ms</option>
                   <option :value="500">500 ms</option>
                   <option :value="1000">1 s</option>
+                  <option :value="3000">3 s</option>
+                  <option v-if="![200,250,500,1000,3000].includes(sampleInterval)" :value="sampleInterval">{{ sampleInterval }} ms（自定义）</option>
                 </select>
               </label>
-              <button class="secondary" :disabled="!connected" @click="scopeRunning = !scopeRunning">{{ scopeRunning ? '暂停' : '继续' }}</button>
+              <button class="secondary" :disabled="!connected" @click="scopeRunning = !scopeRunning">{{ scopeRunning ? '暂停曲线采集' : '继续曲线采集' }}</button>
               <button class="secondary" @click="scopeData = {}">清空</button>
             </div>
           </div>
@@ -550,7 +699,8 @@ onUnmounted(() => window.clearTimeout(statusTimer));
             </div>
             <div class="toolbar-actions">
               <input v-model="query" class="search" placeholder="搜索参数 ID / 名称…" />
-              <button class="secondary" :disabled="busy || !connected" @click="readAll">读取全部</button>
+              <button class="secondary" :disabled="busy || !connected" @click="readAll()">读取全部</button>
+              <button class="secondary" :disabled="busy || !connected || !failedGroups.length" @click="readAll(true)">重读失败 / 未完成组（{{ failedGroups.length }}）</button>
             </div>
           </div>
 
@@ -579,7 +729,7 @@ onUnmounted(() => window.clearTimeout(statusTimer));
                   <td class="parameter-id"><strong>{{ parameter.parameterId }}</strong><code>{{ hex(parameter.address) }}</code></td>
                   <td class="parameter-name"><span>{{ parameter.name }}</span><small v-if="parameter.description">{{ parameter.description }}</small></td>
                   <td class="current-value">
-                    <template v-if="values[parameter.parameterId]">{{ values[parameter.parameterId].value }} {{ parameter.unit }}</template>
+                    <template v-if="values[parameter.parameterId]">{{ values[parameter.parameterId].value }} {{ parameter.unit }} <small v-if="staleIds.has(parameter.parameterId)">（已过期 / 本次未读取）</small></template>
                     <span v-else>未读取</span>
                   </td>
                   <td>
@@ -593,7 +743,7 @@ onUnmounted(() => window.clearTimeout(statusTimer));
                   </td>
                   <td><span class="range">{{ parameter.min }} … {{ parameter.max }}</span></td>
                   <td><span class="risk" :class="parameter.risk">{{ riskLabel(parameter.risk) }}</span></td>
-                  <td><button class="write-button" :disabled="busy || !connected || !isDirty(parameter)" @click="writeOne(parameter)">写入并回读</button></td>
+                  <td><button class="write-button" :disabled="busy || !connected || staleIds.has(parameter.parameterId) || !isDirty(parameter)" @click="writeOne(parameter)">写入并回读</button></td>
                 </tr>
               </tbody>
             </table>

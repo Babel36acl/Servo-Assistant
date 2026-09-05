@@ -1,5 +1,5 @@
 use crate::audit::{now_ms, AuditEntry, AuditStore, AuditStoreError};
-use crate::modbus::{ModbusError, RtuClient};
+use crate::modbus::{CommunicationSettings, CommunicationStats, ModbusError, RtuClient};
 use crate::profile::{
     decode_value, encode_value, Access, OperationDefinition, OperationSet, ParameterDefinition,
     ParitySetting, ProfileError, RiskLevel, ServoProfile, StatusDefinition,
@@ -70,6 +70,7 @@ impl AppState {
                 profile: None,
                 session: None,
                 audit_store: AuditStore::open(database_path)?,
+                communication: CommunicationSettings::default(),
             })),
         })
     }
@@ -79,6 +80,7 @@ struct Runtime {
     profile: Option<ServoProfile>,
     session: Option<Session>,
     audit_store: AuditStore,
+    communication: CommunicationSettings,
 }
 
 enum Session {
@@ -353,7 +355,21 @@ where
     let inner = state.inner.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let mut runtime = inner.lock().map_err(|_| RuntimeError::Poisoned)?;
-        operation(&mut runtime)
+        let result = operation(&mut runtime);
+        let events = match runtime.session.as_mut() {
+            Some(Session::Serial(client)) => std::mem::take(&mut client.events),
+            _ => Vec::new(),
+        };
+        for (status, detail) in events {
+            // A logging failure must not change a completed device operation into a retryable failure.
+            if let Err(error) = runtime
+                .audit_store
+                .append("communication.read", &status, &detail)
+            {
+                eprintln!("通讯审计写入失败：{error}");
+            }
+        }
+        result
     })
     .await
     .map_err(|error| RuntimeError::Task(error.to_string()).to_string())?
@@ -454,7 +470,7 @@ pub async fn connect_device(
                     .parity(parity)
                     .stop_bits(stop_bits)
                     .timeout(Duration::from_millis(request.timeout_ms.clamp(100, 10_000)))
-                    .open()?;
+                    .open().map_err(|error| RuntimeError::Task(format!("无法打开 {port_name}：{error}。若拒绝访问，请检查端口是否被其他程序或测试占用。")))?;
                 let bits_per_char = 1
                     + 8
                     + u32::from(!matches!(request.parity, ParitySetting::None))
@@ -469,6 +485,9 @@ pub async fn connect_device(
         };
         let mode = session.mode();
         runtime.session = Some(session);
+        if let Some(Session::Serial(client)) = runtime.session.as_mut() {
+            client.settings = runtime.communication.clone();
+        }
         runtime.push_audit(
             "connection.open",
             "success",
@@ -520,6 +539,86 @@ pub async fn read_parameters(
         };
         let session = runtime.session.as_mut().ok_or(RuntimeError::NotConnected)?;
         read_parameter_definitions(session, definitions)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn configure_communication(
+    settings: CommunicationSettings,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    with_runtime(state, move |runtime| {
+        settings.validate()?;
+        if let Some(Session::Serial(client)) = runtime.session.as_mut() {
+            client.settings = settings.clone();
+        }
+        runtime.communication = settings;
+        Ok(())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn get_communication_stats(
+    state: State<'_, AppState>,
+) -> Result<CommunicationStats, String> {
+    with_runtime(state, |runtime| {
+        Ok(match runtime.session.as_ref() {
+            Some(Session::Serial(client)) => client.stats.clone(),
+            _ => CommunicationStats::default(),
+        })
+    })
+    .await
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProbeResult {
+    success: bool,
+    attempts: u64,
+    elapsed_ms: u64,
+    error: Option<String>,
+}
+
+#[tauri::command]
+pub async fn probe_read(
+    address: u16,
+    count: u16,
+    state: State<'_, AppState>,
+) -> Result<ProbeResult, String> {
+    with_runtime(state, move |runtime| {
+        let profile = runtime.profile.as_ref().ok_or(RuntimeError::NoProfile)?;
+        // Only known contiguous status addresses may be exercised; never scan arbitrary device memory.
+        if count == 0
+            || count > 100
+            || (0..count).any(|offset| {
+                address
+                    .checked_add(offset)
+                    .is_none_or(|value| !profile.statuses.iter().any(|s| s.address == value))
+            })
+        {
+            return Err(RuntimeError::Task(
+                "测试范围必须是 Profile 中连续的状态寄存器（1..100）".into(),
+            ));
+        }
+        let started = std::time::Instant::now();
+        let (result, attempts) = match runtime.session.as_mut().ok_or(RuntimeError::NotConnected)? {
+            Session::Serial(client) => {
+                let retries = client.stats.retries;
+                let result = client
+                    .read_transaction(address, count)
+                    .map_err(|e| e.to_string());
+                (result, 1 + client.stats.retries - retries)
+            }
+            Session::Simulator(device) => (Ok(device.read_registers(address, count)), 1),
+        };
+        Ok(ProbeResult {
+            success: result.is_ok(),
+            attempts,
+            elapsed_ms: started.elapsed().as_millis() as u64,
+            error: result.err(),
+        })
     })
     .await
 }

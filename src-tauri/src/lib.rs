@@ -5,9 +5,10 @@ mod runtime;
 
 use runtime::{
     apply_parameters, batch_write_parameters, capture_parameter_snapshot,
-    compare_parameter_snapshot, connect_device, disconnect_device, get_active_profile,
-    get_audit_log, get_connection_status, import_profile, list_serial_ports, persist_parameters,
-    read_parameters, read_statuses, write_parameter, AppState,
+    compare_parameter_snapshot, configure_communication, connect_device, disconnect_device,
+    get_active_profile, get_audit_log, get_communication_stats, get_connection_status,
+    import_profile, list_serial_ports, persist_parameters, probe_read, read_parameters,
+    read_statuses, write_parameter, AppState,
 };
 use tauri::Manager;
 
@@ -20,6 +21,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            configure_communication,
+            get_communication_stats,
+            probe_read,
             import_profile,
             get_active_profile,
             list_serial_ports,

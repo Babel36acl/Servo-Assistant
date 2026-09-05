@@ -153,3 +153,22 @@ export interface SerialPortInfo {
   name: string;
   description: string;
 }
+
+export interface CommunicationStats {
+  transactions: number;
+  firstSuccesses: number;
+  recovered: number;
+  failed: number;
+  crcErrors: number;
+  timeouts: number;
+  retries: number;
+  lastSuccessMs: number | null;
+  lastFailure: string | null;
+}
+
+export interface ProbeResult {
+  success: boolean;
+  attempts: number;
+  elapsedMs: number;
+  error: string | null;
+}

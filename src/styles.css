@@ -128,3 +128,9 @@ tr.dirty { background: #3b2d1026; }
   .workspace { grid-template-columns: 270px minmax(0, 1fr); }
   .status-strip { grid-template-columns: repeat(3, 1fr); }
 }
+.communication-panel { padding: 20px; margin-bottom: 18px; }
+.communication-controls { border: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 14px; align-items: end; }
+.communication-controls label { display: grid; gap: 6px; }
+.communication-controls input[type="number"] { width: 150px; }
+.communication-panel p { overflow-wrap: anywhere; }
+.communication-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; }

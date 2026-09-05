@@ -1,7 +1,75 @@
+use crate::audit::now_ms;
+use serde::{Deserialize, Serialize};
 use serialport::{ClearBuffer, SerialPort};
-use std::io::{Read, Write};
+use std::io::Write;
 use std::time::{Duration, Instant};
 use thiserror::Error;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommunicationSettings {
+    pub retries: u8,
+    pub max_registers: u16,
+}
+
+impl Default for CommunicationSettings {
+    fn default() -> Self {
+        Self {
+            retries: 2,
+            max_registers: 16,
+        }
+    }
+}
+
+impl CommunicationSettings {
+    pub fn validate(&self) -> Result<(), ModbusError> {
+        if self.retries > 3 || !(1..=100).contains(&self.max_registers) {
+            return Err(ModbusError::InvalidResponse(
+                "重试次数须为 0..3，分组上限须为 1..100".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommunicationStats {
+    pub transactions: u64,
+    pub first_successes: u64,
+    pub recovered: u64,
+    pub failed: u64,
+    pub crc_errors: u64,
+    pub timeouts: u64,
+    pub retries: u64,
+    pub last_success_ms: Option<u64>,
+    pub last_failure: Option<String>,
+}
+
+fn retryable(error: &ModbusError) -> bool {
+    matches!(error, ModbusError::Crc)
+        || matches!(error, ModbusError::Io(e) if e.kind() == std::io::ErrorKind::TimedOut)
+}
+
+fn read_captured(
+    port: &mut dyn SerialPort,
+    buffer: &mut [u8],
+    received: &mut Vec<u8>,
+) -> Result<(), ModbusError> {
+    let mut offset = 0;
+    while offset < buffer.len() {
+        match port.read(&mut buffer[offset..]) {
+            Ok(0) => return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof).into()),
+            Ok(count) => {
+                received.extend_from_slice(&buffer[offset..offset + count]);
+                offset += count;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(())
+}
 
 #[derive(Debug, Error)]
 pub enum ModbusError {
@@ -19,6 +87,8 @@ pub enum ModbusError {
     Crc,
     #[error("Modbus 响应格式无效：{0}")]
     InvalidResponse(String),
+    #[error("{0}")]
+    ReadFailed(String),
 }
 
 pub struct RtuClient {
@@ -26,6 +96,10 @@ pub struct RtuClient {
     slave_id: u8,
     inter_frame_delay: Duration,
     last_frame_end: Option<Instant>,
+    pub settings: CommunicationSettings,
+    pub stats: CommunicationStats,
+    pub events: Vec<(String, String)>,
+    received: Vec<u8>,
 }
 
 impl RtuClient {
@@ -41,6 +115,10 @@ impl RtuClient {
             slave_id,
             inter_frame_delay: Duration::from_micros(micros.max(1.0) as u64),
             last_frame_end: None,
+            settings: CommunicationSettings::default(),
+            stats: CommunicationStats::default(),
+            events: Vec::new(),
+            received: Vec::new(),
         }
     }
 
@@ -49,13 +127,72 @@ impl RtuClient {
         address: u16,
         count: u16,
     ) -> Result<Vec<u16>, ModbusError> {
+        if count == 0 || count > 100 || address.checked_add(count - 1).is_none() {
+            return Err(ModbusError::InvalidResponse("读取范围无效".into()));
+        }
+        let mut values = Vec::new();
+        let mut offset = 0;
+        while offset < count {
+            let size = (count - offset).min(self.settings.max_registers);
+            values.extend(self.read_transaction(address + offset, size)?);
+            offset += size;
+        }
+        Ok(values)
+    }
+
+    // One physical FC03 transaction, also used by the short/long frame comparison.
+    pub fn read_transaction(&mut self, address: u16, count: u16) -> Result<Vec<u16>, ModbusError> {
+        self.stats.transactions += 1;
+        for attempt in 0..=self.settings.retries {
+            match self.read_once(address, count) {
+                Ok(values) => {
+                    if attempt == 0 {
+                        self.stats.first_successes += 1;
+                    } else {
+                        self.stats.recovered += 1;
+                    }
+                    self.stats.last_success_ms = Some(now_ms());
+                    self.events.push((
+                        "success".into(),
+                        format!(
+                            "FC03 address=0x{address:04X} count={count} attempts={}",
+                            attempt + 1
+                        ),
+                    ));
+                    return Ok(values);
+                }
+                Err(error) => {
+                    if matches!(error, ModbusError::Crc) {
+                        self.stats.crc_errors += 1;
+                    }
+                    if matches!(&error, ModbusError::Io(e) if e.kind() == std::io::ErrorKind::TimedOut)
+                    {
+                        self.stats.timeouts += 1;
+                    }
+                    let detail = format!("FC03 address=0x{address:04X} count={count} attempt={} time={} error={error} rx={:02X?}", attempt + 1, now_ms(), self.received);
+                    self.stats.last_failure = Some(detail.clone());
+                    if attempt < self.settings.retries && retryable(&error) {
+                        self.stats.retries += 1;
+                        self.events.push(("retry".into(), detail));
+                    } else {
+                        self.stats.failed += 1;
+                        self.events.push(("failed".into(), detail.clone()));
+                        return Err(ModbusError::ReadFailed(detail));
+                    }
+                }
+            }
+        }
+        unreachable!()
+    }
+
+    fn read_once(&mut self, address: u16, count: u16) -> Result<Vec<u16>, ModbusError> {
         if count == 0 || count > 100 {
             return Err(ModbusError::InvalidResponse("读取数量必须为 1..100".into()));
         }
         let request = request_frame(self.slave_id, 0x03, address, count);
-        self.exchange(&request, 0x03, |port, prefix| {
+        self.exchange(&request, 0x03, |port, prefix, received| {
             let mut byte_count = [0_u8; 1];
-            port.read_exact(&mut byte_count)?;
+            read_captured(port, &mut byte_count, received)?;
             let byte_count = byte_count[0] as usize;
             if byte_count != count as usize * 2 {
                 return Err(ModbusError::InvalidResponse(format!(
@@ -64,7 +201,7 @@ impl RtuClient {
                 )));
             }
             let mut tail = vec![0_u8; byte_count + 2];
-            port.read_exact(&mut tail)?;
+            read_captured(port, &mut tail, received)?;
             let mut response = Vec::with_capacity(3 + tail.len());
             response.extend_from_slice(prefix);
             response.push(byte_count as u8);
@@ -81,9 +218,9 @@ impl RtuClient {
 
     pub fn write_single_register(&mut self, address: u16, value: u16) -> Result<(), ModbusError> {
         let request = request_frame(self.slave_id, 0x06, address, value);
-        self.exchange(&request, 0x06, |port, prefix| {
+        self.exchange(&request, 0x06, |port, prefix, received| {
             let mut tail = [0_u8; 6];
-            port.read_exact(&mut tail)?;
+            read_captured(port, &mut tail, received)?;
             let mut response = Vec::with_capacity(8);
             response.extend_from_slice(prefix);
             response.extend_from_slice(&tail);
@@ -101,16 +238,17 @@ impl RtuClient {
         &mut self,
         request: &[u8],
         function: u8,
-        read_success: impl FnOnce(&mut dyn SerialPort, &[u8; 2]) -> Result<T, ModbusError>,
+        read_success: impl FnOnce(&mut dyn SerialPort, &[u8; 2], &mut Vec<u8>) -> Result<T, ModbusError>,
     ) -> Result<T, ModbusError> {
         self.wait_for_inter_frame_gap();
+        self.received.clear();
         let result = (|| {
             self.port.clear(ClearBuffer::Input)?;
             self.port.write_all(request)?;
             self.port.flush()?;
 
             let mut prefix = [0_u8; 2];
-            self.port.read_exact(&mut prefix)?;
+            read_captured(self.port.as_mut(), &mut prefix, &mut self.received)?;
             if prefix[0] != self.slave_id {
                 return Err(ModbusError::SlaveMismatch {
                     expected: self.slave_id,
@@ -119,7 +257,7 @@ impl RtuClient {
             }
             if prefix[1] == function | 0x80 {
                 let mut tail = [0_u8; 3];
-                self.port.read_exact(&mut tail)?;
+                read_captured(self.port.as_mut(), &mut tail, &mut self.received)?;
                 let response = [prefix[0], prefix[1], tail[0], tail[1], tail[2]];
                 verify_crc(&response)?;
                 return Err(ModbusError::Exception {
@@ -133,7 +271,7 @@ impl RtuClient {
                     actual: prefix[1],
                 });
             }
-            read_success(self.port.as_mut(), &prefix)
+            read_success(self.port.as_mut(), &prefix, &mut self.received)
         })();
         self.last_frame_end = Some(Instant::now());
         result
@@ -195,3 +333,7 @@ mod tests {
         assert_eq!(modbus_crc(&[0x01, 0x03, 0x00, 0x05, 0x00, 0x02]), 0x0AD4);
     }
 }
+
+#[cfg(test)]
+#[path = "modbus_tests.rs"]
+mod transport_tests;

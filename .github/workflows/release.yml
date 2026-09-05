@@ -62,7 +62,11 @@ jobs:
       - name: Test before release
         run: |
           pnpm build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pnpm test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path src-tauri/Cargo.toml --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo clippy --manifest-path src-tauri/Cargo.toml --locked -- -D warnings
 
       - name: Build and publish GitHub Release

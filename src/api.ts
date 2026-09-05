@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AuditEntry,
+  CommunicationStats,
+  ProbeResult,
   BatchWriteResult,
   ConnectionMode,
   ConnectionStatus,
@@ -16,6 +18,13 @@ import type {
 } from "./types";
 
 export const servoApi = {
+  configureCommunication(settings: { retries: number; maxRegisters: number }) {
+    return invoke<void>("configure_communication", { settings });
+  },
+  communicationStats() { return invoke<CommunicationStats>("get_communication_stats"); },
+  probeRead(address: number, count: number) {
+    return invoke<ProbeResult>("probe_read", { address, count });
+  },
   importProfile(profileJson: string) {
     return invoke<ProfileSummary>("import_profile", { profileJson });
   },
