@@ -38,7 +38,7 @@ function fixture(overrides = {}) {
     return module.exports;
   }
   const script = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8').split('<script setup lang="ts">')[1].split('</script>')[0];
-  const app = evaluate(script + '\nexport { readAll, runStabilityTest, scheduleStatusPoll, pollingEnabled, connected, profile, maxRegisters, values, drafts, staleIds, failedGroups, busy, cancelRequested, readProgress, errorMessage, communicationError, testResults, testCycles, discoverConnection, discovery, discoveryMessage, discoveryActive, portName, slaveId, baudRate, protocol, parity, stopBits, connectionPreset, changeConnectionPreset, discoveryEnd, connectionBlockedReason, connectionMode, connect };');
+  const app = evaluate(script + '\nexport { readAll, runStabilityTest, scheduleStatusPoll, pollingEnabled, connected, profile, maxRegisters, values, drafts, staleIds, failedGroups, busy, cancelRequested, readProgress, errorMessage, communicationError, testResults, testCycles, discoverConnection, discovery, discoveryMessage, discoveryActive, portName, slaveId, baudRate, protocol, parity, stopBits, discoveryEnd, connectionBlockedReason, connectionMode, connect, exportSnapshot, snapshotExportPath, notice };');
   app.connected.value = true;
   app.profile.value = { parameters: [{ parameterId: 'P1', address: 1 }, { parameterId: 'P2', address: 3 }], statuses: [{ id: 'speed', address: 4096 }, { id: 'position', address: 4097 }] };
   return { app, timers, api };
@@ -138,20 +138,47 @@ test('cancelled discovery preserves prior settings and releases busy state', asy
   assert.equal(app.busy.value, false);
 });
 
-test('P300 preset applies device limits without writing and rejects out-of-range discovery', async () => {
-  let calls = 0;
-  const { app } = fixture({ discover: async () => { calls++; } });
+test('manual connection keeps selected transport and rejects invalid discovery range', async () => {
+  const requests = [];
+  const { app } = fixture({ discover: async request => { requests.push(request); return { found: false, cancelled: false }; } });
   app.connected.value = false;
   app.portName.value = 'COM4';
-  app.connectionPreset.value = 'p300';
-  app.changeConnectionPreset();
-  assert.equal(app.discoveryEnd.value, 32);
-  assert.equal(app.protocol.value, 'rtu');
-  assert.equal(app.parity.value, 'even');
-  app.discoveryEnd.value = 33;
+  app.parity.value = 'none';
+  app.baudRate.value = 19200;
+  app.stopBits.value = 1;
+  app.discoveryEnd.value = 248;
   await app.discoverConnection();
-  assert.equal(calls, 0);
-  assert.match(app.errorMessage.value, /1..32/);
+  assert.equal(requests.length, 0);
+  assert.match(app.errorMessage.value, /1..247/);
+  app.discoveryEnd.value = 1;
+  await app.discoverConnection();
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].connection.preset, 'profile');
+  assert.equal(requests[0].connection.parity, 'none');
+  assert.equal(requests[0].connection.baudRate, 19200);
+  assert.equal(requests[0].connection.stopBits, 1);
+});
+
+test('snapshot export reports confirmed path and preserves it on cancellation or failure', async () => {
+  let result = { path: 'C:/自选目录/备份.servo-snapshot.json', parameterCount: 214 };
+  const { app } = fixture({ exportSnapshot: async () => {
+    if (result instanceof Error) throw result;
+    return result;
+  } });
+  await app.exportSnapshot();
+  const savedPath = result.path;
+  assert.equal(app.snapshotExportPath.value, savedPath);
+  assert.ok(app.notice.value.includes(savedPath));
+  result = null;
+  await app.exportSnapshot();
+  assert.match(app.notice.value, /已取消导出/);
+  assert.equal(app.snapshotExportPath.value, savedPath);
+  result = new Error('文件导出失败');
+  await app.exportSnapshot();
+  assert.match(app.errorMessage.value, /文件导出失败/);
+  assert.equal(app.notice.value, '快照文件导出未完成');
+  assert.equal(app.snapshotExportPath.value, savedPath);
+  assert.equal(app.busy.value, false);
 });
 
 test('selected serial port cannot hide a missing profile; importing profile enables connection', async () => {

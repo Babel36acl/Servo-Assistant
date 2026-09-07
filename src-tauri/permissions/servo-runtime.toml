@@ -45,6 +45,7 @@ commands.allow = [
   "write_parameter",
   "batch_write_parameters",
   "capture_parameter_snapshot",
+  "export_parameter_snapshot",
   "compare_parameter_snapshot",
   "apply_parameters",
   "persist_parameters",

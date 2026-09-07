@@ -1,6 +1,6 @@
 [package]
 name = "servo-assistant"
-version = "0.4.0"
+version = "0.4.2"
 description = "Device-neutral servo parameter commissioning assistant"
 authors = ["Servo Assistant contributors"]
 license = "GPL-3.0-only"
@@ -26,6 +26,8 @@ serde_json = "1"
 serialport = "4.10"
 thiserror = "2"
 rusqlite = { version = "0.37", features = ["bundled"] }
+tauri-plugin-dialog = "2"
+tempfile = "3"
 
 [patch.crates-io]
 # GTK3 requires 0.18; backport upstream PR #1343 until a compatible fix is published.

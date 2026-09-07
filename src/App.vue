@@ -8,7 +8,6 @@ import type {
   AuditEntry,
   SerialProtocol,
   SerialMode,
-  ConnectionPreset,
   CommunicationStats,
   DiscoveryStatus,
   ConnectionMode,
@@ -45,20 +44,10 @@ const baudRate = ref(19200);
 const parity = ref<Parity>("even");
 const stopBits = ref(1);
 const protocol = ref<SerialProtocol>("rtu");
-const connectionPreset = ref<ConnectionPreset>("profile");
-const stationMax = computed(() => connectionPreset.value === "p300" ? 32 : 247);
-const baudRates = computed(() => connectionPreset.value === "p300" ? [4800, 9600, 19200, 38400, 57600, 115200] : profile.value?.transport?.allowedBaudRates ?? [19200]);
+const stationMax = 247;
+const baudRates = computed(() => profile.value?.transport?.allowedBaudRates ?? [19200]);
 function serialModeLabel(mode: SerialMode) {
   return `${mode.protocol.toUpperCase()} · 8${{ none: "N", even: "E", odd: "O" }[mode.parity]}${mode.stopBits}`;
-}
-function changeConnectionPreset() {
-  discoveryStart.value = 1;
-  discoveryEnd.value = stationMax.value;
-  slaveId.value = connectionPreset.value === "p300" ? 1 : profile.value?.transport.defaultSlaveId ?? 1;
-  baudRate.value = baudRates.value.includes(baudRate.value) ? baudRate.value : baudRates.value[0];
-  protocol.value = connectionPreset.value === "p300" ? "rtu" : profile.value?.transport.kind === "modbus-ascii" ? "ascii" : "rtu";
-  parity.value = connectionPreset.value === "p300" ? "even" : profile.value?.transport.parity ?? "even";
-  stopBits.value = connectionPreset.value === "p300" ? 1 : profile.value?.transport.stopBits ?? 1;
 }
 const timeoutMs = ref(800);
 const connectionBlockedReason = computed(() => {
@@ -72,6 +61,7 @@ const statuses = ref<StatusValue[]>([]);
 const statusUpdatedAt = ref<number | null>(null);
 const audit = ref<AuditEntry[]>([]);
 const comparison = ref<SnapshotDiff[]>([]);
+const snapshotExportPath = ref("");
 const selectedBatch = ref<string[]>([]);
 const scopeRunning = ref(true);
 const sampleInterval = ref(250);
@@ -115,15 +105,15 @@ async function pollDiscovery() {
 
 async function discoverConnection() {
   if (busy.value || connected.value || !profile.value || !portName.value) return;
-  if (![discoveryStart.value, discoveryEnd.value, discoveryTimeout.value].every(Number.isInteger) || discoveryStart.value < 1 || discoveryEnd.value > stationMax.value || discoveryStart.value > discoveryEnd.value || discoveryTimeout.value < 100 || discoveryTimeout.value > 2000) {
-    showError(`站号范围须为 1..${stationMax.value}，探测超时须为 100..2000 ms`); return;
+  if (![discoveryStart.value, discoveryEnd.value, discoveryTimeout.value].every(Number.isInteger) || discoveryStart.value < 1 || discoveryEnd.value > stationMax || discoveryStart.value > discoveryEnd.value || discoveryTimeout.value < 100 || discoveryTimeout.value > 2000) {
+    showError(`站号范围须为 1..${stationMax}，探测超时须为 100..2000 ms`); return;
   }
   busy.value = true;
   discoveryActive.value = true;
   discovery.value = null;
   discoveryMessage.value = "正在查找";
   errorMessage.value = "";
-  const resultPromise = servoApi.discover({ connection: { protocol: protocol.value, preset: connectionPreset.value, mode: 'serial', portName: portName.value, slaveId: slaveId.value, baudRate: baudRate.value, parity: parity.value, stopBits: stopBits.value, timeoutMs: discoveryTimeout.value }, startSlave: discoveryStart.value, endSlave: discoveryEnd.value });
+  const resultPromise = servoApi.discover({ connection: { protocol: protocol.value, preset: "profile", mode: 'serial', portName: portName.value, slaveId: slaveId.value, baudRate: baudRate.value, parity: parity.value, stopBits: stopBits.value, timeoutMs: discoveryTimeout.value }, startSlave: discoveryStart.value, endSlave: discoveryEnd.value });
   discoveryTimer = window.setTimeout(pollDiscovery, 250);
   try {
     const result = await resultPromise;
@@ -249,7 +239,6 @@ async function loadProfileJson(json: string) {
     if (profile.value) {
       slaveId.value = profile.value.transport.defaultSlaveId;
       baudRate.value = profile.value.transport.defaultBaudRate;
-      connectionPreset.value = "profile";
       discoveryStart.value = 1;
       discoveryEnd.value = 247;
       protocol.value = profile.value.transport.kind === "modbus-ascii" ? "ascii" : "rtu";
@@ -309,7 +298,7 @@ async function connect() {
       slaveId: slaveId.value,
       baudRate: baudRate.value,
       protocol: protocol.value,
-      preset: connectionPreset.value,
+      preset: "profile",
       parity: parity.value,
       stopBits: stopBits.value,
       timeoutMs: timeoutMs.value,
@@ -394,12 +383,17 @@ async function exportSnapshot() {
   if (!connected.value) return;
   busy.value = true;
   errorMessage.value = "";
+  notice.value = "请选择快照保存位置，确认后读取并导出";
   try {
-    const snapshot = await servoApi.captureSnapshot("手动导出");
-    const timestamp = new Date(snapshot.createdAtMs).toISOString().replace(/[:.]/g, "-");
-    downloadJson(`${snapshot.deviceId}_${timestamp}.servo-snapshot.json`, snapshot);
-    notice.value = `已导出 ${snapshot.values.length} 个参数，并保存到本地审计库`;
+    const result = await servoApi.exportSnapshot();
+    if (!result) {
+      notice.value = "已取消导出，未生成快照文件";
+      return;
+    }
+    snapshotExportPath.value = result.path;
+    notice.value = `已导出 ${result.parameterCount} 个参数，文件已保存至：${result.path}`;
   } catch (error) {
+    notice.value = "快照文件导出未完成";
     showError(error);
   } finally {
     busy.value = false;
@@ -468,15 +462,6 @@ function clearComparison() {
   comparison.value = [];
   selectedBatch.value = [];
   for (const [parameterId, current] of Object.entries(values.value)) drafts.value[parameterId] = current.value;
-}
-
-function downloadJson(filename: string, value: unknown) {
-  const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: "application/json" }));
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(url);
 }
 
 async function writeOne(parameter: ParameterDefinition) {
@@ -679,12 +664,6 @@ onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearT
               </div>
             </label>
           </template>
-          <label>通讯预设
-            <select v-model="connectionPreset" :disabled="connected || busy" @change="changeConnectionPreset">
-              <option value="profile">使用 Profile</option><option value="p300">P300–P302 手册预设</option>
-            </select>
-          </label>
-          <p v-if="connectionPreset === 'p300'" class="field-help">站号 1～32 · P302 默认 RTU 8E1。P301=0 时 MODBUS 关闭，须在驱动器侧启用后查找。</p>
           <div class="field-grid">
             <label>站号<input v-model.number="slaveId" type="number" min="1" :max="stationMax" :disabled="connected || busy" /></label>
             <label>波特率
@@ -696,7 +675,7 @@ onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearT
               <select v-model="protocol" :disabled="connected || busy"><option value="rtu">Modbus RTU</option><option value="ascii">Modbus ASCII</option></select>
             </label>
             <label>停止位
-              <select v-model.number="stopBits" :disabled="connected || busy || connectionPreset === 'p300'"><option :value="1">1</option><option :value="2">2</option></select>
+              <select v-model.number="stopBits" :disabled="connected || busy"><option :value="1">1</option><option :value="2">2</option></select>
             </label>
             <label>校验
               <select v-model="parity" :disabled="connected || busy">
@@ -797,6 +776,10 @@ onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearT
           <div class="section-title"><span>SNAP</span><h2>参数快照</h2></div>
           <p>快照保存设备原始值和工程值，可用于备份、差异比较和选择性恢复。</p>
           <button class="secondary full" :disabled="busy || !connected" @click="exportSnapshot">读取并导出快照</button>
+          <p>导出时选择保存位置和文件名；导入比较请选择 .servo-snapshot.json 文件。</p>
+          <label v-if="snapshotExportPath">最近成功导出的文件（可复制路径）
+            <input class="full" readonly :value="snapshotExportPath" aria-label="最近导出的参数快照路径" />
+          </label>
           <label class="file-button full" :class="{ disabled: busy || !connected }">
             导入快照并比较
             <input type="file" accept="application/json,.json" :disabled="busy || !connected" @change="handleSnapshotFile" />

@@ -14,6 +14,7 @@ mod recording_analysis;
 mod recording_index;
 mod recording_library;
 mod runtime;
+mod snapshot_export;
 
 use runtime::{
     apply_parameters, batch_write_parameters, cancel_discovery, capture_parameter_snapshot,
@@ -27,6 +28,7 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let executable = std::env::current_exe()?;
             let data_dir = portable_data_dir(&executable).unwrap_or(app.path().app_data_dir()?);
@@ -92,6 +94,7 @@ pub fn run() {
             write_parameter,
             batch_write_parameters,
             capture_parameter_snapshot,
+            snapshot_export::export_parameter_snapshot,
             compare_parameter_snapshot,
             apply_parameters,
             persist_parameters,

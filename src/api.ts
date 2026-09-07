@@ -65,6 +65,9 @@ export const servoApi = {
   captureSnapshot(label: string | null = null) {
     return invoke<ParameterSnapshot>("capture_parameter_snapshot", { label });
   },
+  exportSnapshot() {
+    return invoke<{ path: string; parameterCount: number } | null>("export_parameter_snapshot");
+  },
   compareSnapshot(snapshotJson: string) {
     return invoke<SnapshotDiff[]>("compare_parameter_snapshot", { snapshotJson });
   },
