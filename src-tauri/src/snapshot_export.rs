@@ -73,7 +73,7 @@ mod tests {
             schema_version: "servo-parameter-snapshot/1.0".into(),
             created_at_ms: 123,
             label: "导出测试".into(),
-            device_id: "../HD3:test".into(),
+            device_id: "../example-servo:test".into(),
             device_name: "伺服".into(),
             profile_version: "1.0.0".into(),
             values: vec![crate::runtime::SnapshotValue {

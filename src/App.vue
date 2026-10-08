@@ -870,7 +870,7 @@ onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearT
             <div v-for="entry in [...audit].reverse().slice(0, 20)" :key="`${entry.timestampMs}-${entry.action}`" :class="`audit-${entry.status}`">
               <time>{{ formatTimestamp(entry.timestampMs) }}</time>
               <code>{{ entry.action }}</code>
-              <span>{{ entry.detail }}</span>
+              <span>{{ entry.action === 'profile.import' && entry.status === 'success' ? '设备配置已导入' : entry.detail }}</span>
             </div>
             <p v-if="!audit.length">尚无操作记录。</p>
           </div>
