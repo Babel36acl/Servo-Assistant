@@ -28,6 +28,10 @@ JSON Profile 导入
 
 本仓库不包含任何特定厂商的参数库、说明书摘录、品牌资源或资料链接。设备名称、参数定义及操作码应由使用者从有权使用的资料中制作并导入。项目与任何设备制造商不存在隶属、授权或背书关系。
 
+## 从 PDF 制作 Servo Profile
+
+仓库提供 [`servo-profile-from-pdf` Skill](.agents/skills/servo-profile-from-pdf/SKILL.md)，用于从指定型号的伺服器手册提取 Modbus 通信设置、参数和只读状态量，整理为 Servo Profile 1.0 JSON。它要求为字段保留页码证据；手册未说明的地址、缩放、默认值或读写属性会列为待确认，不会用示例或其他型号补猜。生成文件仍需人工审阅，并遵循 [Profile 1.0 契约](docs/profile-v1.md)；应用本身不会读取 PDF，也不内置厂商参数库。
+
 ## EtherCAT 与通信录制
 
 通信工作台支持原始串口收发、模拟器事件及 EtherCAT 帧的后台录制、分卷、离线浏览和以太网 PCAPNG 导出。
