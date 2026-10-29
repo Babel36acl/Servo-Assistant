@@ -1,0 +1,2 @@
+# Shell 脚本必须用 LF，否则 CI 里 bash -c 会把 \r 吃进参数导致整步失败。
+*.sh text eol=lf
