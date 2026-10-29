@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { addressGroups } from "./communication";
 import { servoApi } from "./api";
 import CommunicationWorkbench from "./components/CommunicationWorkbench.vue";
@@ -32,6 +32,18 @@ const pages = [
 const backgroundActivity = ref('');
 const activePage = ref<(typeof pages)[number]['id']>('connection');
 const currentPage = computed(() => pages.find(page => page.id === activePage.value)!);
+const navGroups = [
+  { label: "工作", ids: ["connection", "parameters", "monitor"] },
+  { label: "工具", ids: ["diagnostics", "communication"] },
+  { label: "追溯", ids: ["audit"] },
+] as const;
+function pageById(id: string): (typeof pages)[number] {
+  return pages.find((page) => page.id === id) ?? pages[0];
+}
+watch(activePage, () => {
+  window.scrollTo({ top: 0 });
+  document.getElementById("main")?.focus({ preventScroll: true });
+});
 
 const profile = ref<ServoProfile | null>(null);
 const summary = ref<ProfileSummary | null>(null);
@@ -222,6 +234,49 @@ const filteredParameters = computed(() => {
   });
 });
 
+type ConfirmRequest = { title: string; body: string; danger?: boolean; phrase?: string };
+const confirmReq = ref<ConfirmRequest | null>(null);
+const confirmInput = ref("");
+const confirmError = ref("");
+const confirmField = ref<HTMLInputElement | null>(null);
+let confirmResolve: ((value: string | null) => void) | null = null;
+let confirmOpener: HTMLElement | null = null;
+function requestConfirm(req: ConfirmRequest): Promise<string | null> {
+  confirmReq.value = req;
+  confirmInput.value = "";
+  confirmError.value = "";
+  confirmOpener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  return new Promise((resolve) => {
+    confirmResolve = resolve;
+    void nextTick(() => {
+      const fallback = document.querySelector(".modal-actions button:last-child");
+      const target = (confirmField.value ?? fallback) as HTMLElement | null;
+      target?.focus();
+    });
+  });
+}
+function closeConfirm(action: "submit" | null) {
+  const req = confirmReq.value;
+  if (!req || !confirmResolve) return;
+  if (action === null) {
+    confirmReq.value = null;
+    const done = confirmResolve;
+    confirmResolve = null;
+    done(null);
+    confirmOpener?.focus();
+    return;
+  }
+  if (req.phrase && confirmInput.value !== req.phrase) {
+    confirmError.value = `请输入“${req.phrase}”再继续`;
+    confirmField.value?.focus();
+    return;
+  }
+  confirmReq.value = null;
+  const done = confirmResolve;
+  confirmResolve = null;
+  done(req.phrase ?? "ok");
+  confirmOpener?.focus();
+}
 function showError(error: unknown) {
   errorMessage.value = error instanceof Error ? error.message : String(error);
 }
@@ -429,7 +484,12 @@ async function writeSelectedBatch() {
   const selected = comparison.value.filter((item) => item.changed && item.writable && selectedBatch.value.includes(item.parameterId));
   if (!selected.length) return;
   const expectedPhrase = `批量写入 ${selected.length} 项`;
-  const phrase = window.prompt(`将按当前快照选择性写入并逐项回读，任何写前值变化都会让整批操作停止。\n请输入“${expectedPhrase}”：`);
+  const phrase = await requestConfirm({
+    title: "选择性批量写入",
+    body: `将按当前快照选择性写入并逐项回读，任何写前值变化都会让整批操作停止，共 ${selected.length} 项。`,
+    danger: true,
+    phrase: expectedPhrase,
+  });
   if (phrase === null) return;
   busy.value = true;
   errorMessage.value = "";
@@ -471,14 +531,14 @@ async function writeOne(parameter: ParameterDefinition) {
     showError("请先读取参数并填写有效数值。");
     return;
   }
-  if (!window.confirm(`${parameter.parameterId}：${current.value} → ${value} ${parameter.unit}\n\n写入后将立即回读校验，当前不会自动执行应用或持久化操作。`)) {
-    return;
-  }
-  let phrase: string | null = null;
-  if (parameter.risk === "high" || parameter.risk === "critical") {
-    phrase = window.prompt(`这是${riskLabel(parameter.risk)}参数。请输入“写入 ${parameter.parameterId}”继续：`);
-    if (phrase === null) return;
-  }
+  const highRisk = parameter.risk === "high" || parameter.risk === "critical";
+  const phrase = await requestConfirm({
+    title: `写入 ${parameter.parameterId}`,
+    body: `${parameter.parameterId}：${current.value} → ${value} ${parameter.unit}。写入后立即回读校验，不会自动应用或持久化。`,
+    danger: highRisk,
+    phrase: highRisk ? `写入 ${parameter.parameterId}` : undefined,
+  });
+  if (phrase === null) return;
   busy.value = true;
   errorMessage.value = "";
   try {
@@ -508,7 +568,11 @@ async function writeOne(parameter: ParameterDefinition) {
 }
 
 async function applyChanges() {
-  const phrase = window.prompt("该操作会让已写入参数生效。请输入“应用参数”：");
+  const phrase = await requestConfirm({
+    title: "应用参数",
+    body: "该操作会让已写入参数在设备上生效。",
+    phrase: "应用参数",
+  });
   if (phrase === null) return;
   busy.value = true;
   try {
@@ -523,7 +587,12 @@ async function applyChanges() {
 }
 
 async function persistChanges() {
-  const phrase = window.prompt("即将执行 Profile 定义的持久化操作。请输入“持久化参数”：");
+  const phrase = await requestConfirm({
+    title: "持久化参数",
+    body: "即将执行 Profile 定义的持久化操作，会覆盖旧配置。",
+    danger: true,
+    phrase: "持久化参数",
+  });
   if (phrase === null) return;
   busy.value = true;
   try {
@@ -607,26 +676,33 @@ onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearT
 <template>
   <div class="app-shell">
     <aside class="app-navigation">
+      <a class="skip-link" href="#main">跳到主内容</a>
       <div class="brand"><span class="brand-mark" aria-hidden="true">S<span>∿</span></span><div><strong>Servo Assistant</strong><small>伺服参数调试器</small></div></div>
       <p class="nav-label">调试工作空间</p>
       <nav aria-label="主导航">
-        <button v-for="page in pages" :key="page.id" :class="{ active: activePage === page.id }" :aria-current="activePage === page.id ? 'page' : undefined" @click="activePage = page.id">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path :d="page.icon" /></svg><span>{{ page.label }}<small>{{ page.caption }}</small></span>
-        </button>
+        <template v-for="group in navGroups" :key="group.label">
+          <p class="nav-group">{{ group.label }}</p>
+          <button v-for="id in group.ids" :key="id" :class="{ active: activePage === id }" :aria-current="activePage === id ? 'page' : undefined" :title="pageById(id).caption" @click="activePage = id">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path :d="pageById(id).icon" /></svg><span class="nav-text">{{ pageById(id).label }}</span>
+          </button>
+        </template>
       </nav>
       <div class="nav-device"><span class="nav-label">当前设备</span><strong>{{ summary?.deviceName ?? '未导入 Profile' }}</strong><small>{{ summary ? summary.parameterCount + ' 个参数 · Profile ' + summary.profileVersion : '设备定义由 Profile 提供' }}</small><button @click="activePage = 'connection'">连接设置 →</button></div>
     </aside>
     <div class="app-main">
       <header class="topbar">
         <div><p class="eyebrow">SERVO / {{ currentPage.id.toUpperCase() }}</p><h1>{{ currentPage.label }}</h1><p class="page-caption">{{ currentPage.caption }}</p></div>
-        <div class="connection-summary"><div class="connection-pill" :class="{ online: connected && !communicationError, fault: connected && !!communicationError }"><span class="status-dot"></span>{{ connected ? (communicationError ? '通讯异常' : connectionMode === 'simulator' ? '模拟器已连接' : '串口已连接') : '未连接' }}</div><button v-if="connected" class="danger-outline" :disabled="busy" @click="disconnect">断开连接</button></div>
+        <div class="topbar-side">
+          <span v-if="summary" class="device-chip" :title="summary.deviceName">{{ summary.deviceName }}</span>
+          <div class="connection-summary"><div class="connection-pill" :class="{ online: connected && !communicationError, fault: connected && !!communicationError }"><span class="status-dot"></span>{{ connected ? (communicationError ? '通讯异常' : connectionMode === 'simulator' ? '模拟器已连接' : '串口已连接') : '未连接' }}</div><button v-if="connected" class="danger-outline" :disabled="busy" @click="disconnect">断开连接</button></div>
+          </div>
       </header>
       <div v-if="errorMessage" class="banner error" role="alert"><strong>操作失败</strong><span>{{ errorMessage }}</span><button @click="errorMessage = ''">关闭</button></div>
       <div class="banner info" role="status"><strong>当前状态</strong><span>{{ notice }}</span></div>
       <div v-if="communicationError" class="banner error" role="alert"><strong>通讯异常</strong><span>{{ communicationError }}</span><button @click="activePage = 'diagnostics'">查看诊断</button></div>
       <div v-if="readActive || testActive || discoveryActive" class="operation-progress" role="status"><span>{{ discoveryActive ? '正在查找设备 · ' + (discovery?.completed ?? 0) + '/' + (discovery?.total ?? '—') : readActive ? readProgress : testProgress }}</span><button v-if="discoveryActive" @click="cancelDiscovery">取消查找</button><button v-else :disabled="cancelRequested" @click="cancelRequested = true">{{ cancelRequested ? '等待当前事务结束' : '取消当前操作' }}</button></div>
       <div v-if="backgroundActivity && activePage !== 'communication'" class="operation-progress" role="status"><span>{{ backgroundActivity }}</span><button @click="activePage = 'communication'">返回通信工作台</button></div>
-      <main class="workspace">
+      <main id="main" class="workspace" tabindex="-1">
         <div v-show="activePage === 'connection'" class="connection-layout">
         <section class="panel profile-panel">
           <div class="section-title"><span>01</span><h2>设备配置</h2></div>
@@ -660,7 +736,7 @@ onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearT
                   <option value="" disabled>请选择串口</option>
                   <option v-for="port in ports" :key="port.name" :value="port.name">{{ port.name }}</option>
                 </select>
-                <button class="icon-button" :disabled="connected || busy" title="刷新串口" @click="refreshPorts">↻</button>
+                <button class="icon-button" :disabled="connected || busy" title="刷新串口" aria-label="刷新串口" @click="refreshPorts">↻</button>
               </div>
             </label>
           </template>
@@ -718,14 +794,14 @@ onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearT
               <h2>参数读取与安全写入</h2>
             </div>
             <div class="toolbar-actions">
-              <input v-model="query" class="search" aria-label="搜索参数" placeholder="搜索参数 ID / 名称…" />
+              <input v-model="query" class="search" type="search" aria-label="搜索参数" placeholder="搜索参数 ID / 名称… 如 Pn001" autocomplete="off" spellcheck="false" />
               <button class="secondary" :disabled="busy || !connected" @click="readAll()">读取全部</button>
               <button class="secondary" :disabled="busy || !connected || !failedGroups.length" @click="readAll(true)">重读失败 / 未完成组（{{ failedGroups.length }}）</button>
             </div>
           </div>
 
           <nav class="group-tabs" aria-label="参数分组">
-            <button v-for="group in groups" :key="group" :class="{ active: selectedGroup === group }" @click="selectedGroup = group">{{ group }}</button>
+            <button v-for="group in groups" :key="group" :class="{ active: selectedGroup === group }" :aria-pressed="selectedGroup === group" @click="selectedGroup = group">{{ group }}</button>
           </nav>
 
           <div v-if="comparison.length" class="comparison-bar">
@@ -740,7 +816,7 @@ onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearT
           <div v-else-if="!filteredParameters.length" class="workspace-empty"><h3>没有匹配的参数</h3><p>尝试其他关键词，或清除筛选条件。</p><button @click="query = ''; selectedGroup = '全部'">清除筛选</button></div>
           <div v-else class="table-wrap">
             <table>
-              <thead><tr><th v-if="comparison.length">选择</th><th>参数</th><th>名称</th><th>当前值</th><th>目标值</th><th>范围</th><th>风险</th><th></th></tr></thead>
+              <thead><tr><th scope="col">选择</th><th scope="col">参数</th><th scope="col">当前值</th><th scope="col">写入目标</th><th scope="col">范围</th><th scope="col">风险</th><th scope="col">操作</th></tr></thead>
               <tbody>
                 <tr v-for="parameter in filteredParameters" :key="parameter.parameterId" :class="{ dirty: isDirty(parameter) }">
                   <td v-if="comparison.length" class="select-cell">
@@ -796,7 +872,7 @@ onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearT
         <div v-show="activePage === 'monitor'" class="page-stack">
           <div class="monitor-status"><span>更新于 {{ statusUpdatedAt ? new Date(statusUpdatedAt).toLocaleTimeString() : '尚未读取' }} · {{ !connected ? '已断开' : !pollingEnabled ? '轮询已暂停，显示旧值' : communicationError ? '读取失败，显示旧值' : '状态轮询中' }}</span><button @click="activePage = 'diagnostics'">采集设置 →</button></div>
         <section class="status-strip">
-          <article v-for="status in headlineStatuses" :key="status.id">
+          <article v-for="(status, index) in headlineStatuses" :key="status.id" :style="{ '--i': Math.min(index, 8) }">
             <span>{{ status.name }}</span>
             <strong>{{ status.value }} <small>{{ status.unit }}</small></strong>
             <code>{{ hex(status.address ?? 0) }}</code>
@@ -822,7 +898,7 @@ onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearT
                   <option v-if="![200,250,500,1000,3000].includes(sampleInterval)" :value="sampleInterval">{{ sampleInterval }} ms（自定义）</option>
                 </select>
               </label>
-              <button class="secondary" :disabled="!connected" @click="scopeRunning = !scopeRunning">{{ scopeRunning ? '暂停曲线采集' : '继续曲线采集' }}</button>
+              <button class="secondary" :disabled="!connected" :aria-pressed="scopeRunning" @click="scopeRunning = !scopeRunning">{{ scopeRunning ? '暂停曲线采集' : '继续曲线采集' }}</button>
               <button class="secondary" @click="scopeData = {}">清空</button>
             </div>
           </div>
@@ -877,6 +953,18 @@ onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearT
         </section>
         </div>
       </main>
+      <div v-if="confirmReq" class="modal-overlay" @pointerdown.self="closeConfirm(null)">
+        <div class="modal" role="alertdialog" aria-modal="true" :aria-label="confirmReq.title" @keydown.escape="closeConfirm(null)">
+          <h2>{{ confirmReq.title }}</h2>
+          <p class="modal-body">{{ confirmReq.body }}</p>
+          <label v-if="confirmReq.phrase">请输入“{{ confirmReq.phrase }}”以继续<input ref="confirmField" v-model="confirmInput" autocomplete="off" spellcheck="false" :placeholder="confirmReq.phrase" @keydown.enter="closeConfirm('submit')" /></label>
+          <p v-if="confirmError" class="modal-error" role="alert">{{ confirmError }}</p>
+          <div class="modal-actions">
+            <button class="secondary" @click="closeConfirm(null)">取消</button>
+            <button class="primary" :disabled="busy" @click="closeConfirm('submit')">确认</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>

@@ -9,3 +9,5 @@
 Windows：安装版 EXE / MSI，或解压即用的便携 ZIP。Linux：DEB、RPM、AppImage（均为 x64）。便携版升级时请保留程序旁的 data 文件夹；Windows 便携版需要 WebView2 Runtime。
 
 在线 EtherCAT 需要安装 Npcap；当前监控为非实时 SDO 轮询，不含运动控制。
+暂无设备，实机长时间录制、真实磁盘满/断电与独立抓包对照尚未验收。子进程强退恢复测试不等同于物理断电验证。
+历史曲线重建完整成功的 Modbus FC03 事务或模拟器状态采样，不补造丢失数据；外部 PCAP 暂不重建 EtherCAT 过程数据曲线。
