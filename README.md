@@ -1,6 +1,6 @@
 # 伺服参数调试器
 
-[![CI](https://github.com/AKCX2002/Servo-Assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/AKCX2002/Servo-Assistant/actions/workflows/ci.yml)
+[![CI](https://github.com/Babel36acl/Servo-Assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/Babel36acl/Servo-Assistant/actions/workflows/ci.yml)
 
 一个设备中立的 Tauri 2 GUI 调试器。程序不内置厂商、型号、参数表或手册内容；设备兼容性完全由用户导入的 JSON Profile 描述。
 
@@ -66,7 +66,7 @@ cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 
 [通用示例 Profile](examples/servo-profile.example.json)仅用于展示格式和模拟器测试，其中地址、范围和操作码均为虚构值，不得直接用于真实设备。
 
-界面按任务分为设备与连接、参数工作区、实时监控、通讯诊断、通信工作台和操作证据。快照与参数事务位于参数表下方；通讯设置和稳定性测试位于通讯诊断。切换工作区保留未提交编辑、采集和录制状态，进行中的录制、网卡捕获及 EtherCAT 连接会在其他页面提示。窄窗口自动切换为顶部导航，表格在自身区域滚动。
+界面是 VSCode 式四区壳：左侧图标栏、二级侧栏、中间主区、底下状态栏，命令面板 Ctrl+K 全局呼出。六个工作区为设备与连接、参数工作区、实时监控、通讯诊断、通信工作台（录制解析 / EtherCAT 主站双 Tab）和操作证据。快照与参数事务位于参数表下方；通讯设置和稳定性测试位于通讯诊断。切换工作区保留未提交编辑、采集和录制状态，进行中的录制、网卡捕获及 EtherCAT 连接会在状态栏提示，一键返回。平板 1024 断点以下收成单列：图标栏下移为底部栏，侧栏变抽屉，所有可点目标不小于 44px。
 
 ## 关键文件
 
@@ -75,7 +75,12 @@ cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 - `src-tauri/src/modbus.rs`：FC03/FC06、RTU CRC / ASCII LRC、异常响应和帧间隔
 - `src-tauri/src/runtime.rs`：串口独占、模拟器、安全写入和可选设备操作
 - `src-tauri/src/audit.rs`：SQLite 持久审计与快照存储
-- `src/App.vue`：配置导入、连接、差异比较和确认界面
+- `src/App.vue`：应用壳装配、全局横幅、确认框与命令面板
+- `src/shell/`：自绘标题栏、图标栏、二级侧栏、状态栏、命令面板
+- `src/composables/useServo.ts`：应用状态单例
+- `src/views/`：六个工作区视图（懒加载）
+- `src/features/{recording,ethercat}/`：录制解析 / EtherCAT 主站
+- `src/styles/tokens-a.css`：设计令牌唯一色源（`pnpm lint:tokens` 门禁）
 
 ## 验证边界
 
