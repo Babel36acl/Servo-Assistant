@@ -5,11 +5,11 @@ import { createRequire } from 'node:module';
 import vm from 'node:vm';
 const require = createRequire(import.meta.url), ts = require('typescript'), vue = require('vue');
 function fixture(invoke) {
-  const script = readFileSync(new URL('../src/components/CommunicationWorkbench.vue', import.meta.url), 'utf8').split('<script setup lang="ts">')[1].split('</script>')[0];
+  const script = readFileSync(new URL('../src/features/recording/RecordingSessionView.vue', import.meta.url), 'utf8').split('<script setup lang="ts">')[1].split('</script>')[0];
   const module = { exports: {} }, timers = new Map(); let id = 0, unmount;
   const source = script + '\nexport { page, path, fileMode, query, direction, rows, visible, total, pageBusy, browseError, follow, toggleFollow, details, selected, decoded, modbusDetail, tick, start, stop, slaveFilter, functionFilter, addressFilter, outcomeFilter, triggerEnabled, preSeconds, postSeconds, triggerKeyword, locatePoint };';
   vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText, {
-    module, exports: module.exports, defineEmits: () => () => {},
+    module, exports: module.exports, defineEmits: () => () => {}, defineExpose: () => {},
     require: name => name === 'vue' ? { ...vue, onMounted() {}, onUnmounted(fn) { unmount = fn; } } : name === '@tauri-apps/api/core' ? { invoke } : {},
     setTimeout(fn) { timers.set(++id, fn); return id; }, clearTimeout(id) { timers.delete(id); }, console,
   });

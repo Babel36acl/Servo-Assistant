@@ -55,18 +55,18 @@ const paths = computed(() => props.series.map((series) => {
 
 <style scoped>
 .scope-chart { display: grid; grid-template-columns: minmax(0, 1fr) 230px; gap: 12px; align-items: stretch; }
-svg { width: 100%; min-height: 230px; background: #101015; border: 1px solid var(--line); }
-.grid line { stroke: rgba(255, 255, 255, 0.08); stroke-width: 1; }
+svg { width: 100%; min-height: 230px; background: var(--sa-bg-sunken); border: 1px solid var(--line); }
+.grid line { stroke: var(--sa-line); stroke-width: 1; }
 polyline { fill: none; stroke-width: 2; vector-effect: non-scaling-stroke; }
-text { fill: #6f6b62; font-size: 11px; }
+text { fill: var(--sa-faint); font-size: var(--sa-text-12); }
 .scope-legend { display: flex; flex-direction: column; gap: 7px; }
-.scope-legend > div { display: grid; grid-template-columns: 8px 1fr auto; gap: 7px; align-items: center; padding: 8px; background: #121218; }
+.scope-legend > div { display: grid; grid-template-columns: 8px 1fr auto; gap: 7px; align-items: center; padding: 8px; background: var(--sa-bg-sunken); }
 .scope-legend i { width: 8px; height: 8px; border-radius: 50%; }
-.scope-legend strong { font-size: 11px; }
-.scope-legend span { font-size: 12px; font-variant-numeric: tabular-nums; }
-.scope-legend small { grid-column: 2 / -1; color: #a8a49b; font-size: 9px; }
+.scope-legend strong { font-size: var(--sa-text-12); }
+.scope-legend span { font-size: var(--sa-text-12); font-variant-numeric: tabular-nums; }
+.scope-legend small { grid-column: 2 / -1; color: var(--sa-muted); font-size: var(--sa-text-10); }
 @media (max-width: 1180px) { .scope-chart { grid-template-columns: 1fr; } .scope-legend { display: grid; grid-template-columns: repeat(3, 1fr); } }
 
-.scope-empty { align-self: center; padding: 24px; color: var(--muted); font-size: 12px; line-height: 1.8; text-align: center; }
+.scope-empty { align-self: center; padding: 24px; color: var(--sa-muted); font-size: var(--sa-text-12); line-height: 1.8; text-align: center; }
 @media (max-width: 640px) { .scope-legend { grid-template-columns: 1fr; } }
 </style>

@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import vm from 'node:vm';
 const require = createRequire(import.meta.url), ts = require('typescript'), vue = require('vue');
 function fixture(invoke) {
-  const script = readFileSync(new URL('../src/components/EthercatMaster.vue', import.meta.url), 'utf8').split('<script setup lang="ts">')[1].split('</script>')[0];
+  const script = readFileSync(new URL('../src/features/ethercat/EthercatMasterView.vue', import.meta.url), 'utf8').split('<script setup lang="ts">')[1].split('</script>')[0];
   const source = script + '\nexport { action, write, read, tick, selectSlave, status, slave, profile, values, drafts, confirmWrite, error, busy, polling, selection, history };';
   const module = { exports: {} };
   vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText, {

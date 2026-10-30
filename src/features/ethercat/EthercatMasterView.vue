@@ -1,17 +1,23 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
-import ScopeChart from './ScopeChart.vue';
+import { CHART_COLORS } from '../../styles/chart-palette';
+import ScopeChart from '../../components/ScopeChart.vue';
 type Adapter = { name: string; description: string };
 type Slave = { position: number; station: number; name: string; vendor: number; product: number; revision: number; state: number; alCode: number; mailboxOut: number; mailboxIn: number };
 type Status = { connected: boolean; adapter: string; slaves: Slave[]; driverDropped: number | null };
 type ObjectDef = { id: string; name: string; index: number; subIndex: number; size: number; signed: boolean; writable: boolean; min: string; max: string; scale: number; unit: string };
 type Profile = { schemaVersion: string; name: string; vendor: number; product: number; objects: ObjectDef[] };
 type Value = { id: string; raw: string; value: number; timestampUs: number };
-const emit = defineEmits<{ connection: [connected: boolean]; mapping: [value: { mailboxes: Array<{ station: number; offset: number }> }] }>();
+const emit = defineEmits<{ connection: [connected: boolean]; mapping: [value: { mailboxes: Array<{ station: number; offset: number }> }]; activity: [label: string] }>();
 const adapters = ref<Adapter[]>([]), adapter = ref(''), confirmation = ref('');
 const status = ref<Status>({ connected: false, adapter: '', slaves: [], driverDropped: null });
-watch(() => status.value.connected, connected => emit('connection', connected), { immediate: true });
+function reportConnection(): void {
+  const slaves = status.value.slaves.length;
+  emit('connection', status.value.connected);
+  emit('activity', status.value.connected ? `EtherCAT 主站已连接 · ${slaves} 从站` : '');
+}
+watch(() => [status.value.connected, status.value.slaves.length], reportConnection, { immediate: true });
 const profile = ref<Profile | null>(null), slave = ref(1), error = ref(''), notice = ref('');
 const busy = ref(false), polling = ref(false), interval = ref(1000), selection = ref<string[]>([]);
 const values = ref<Record<string, Value>>({}), drafts = ref<Record<string, string>>({}), history = ref<Record<string, number[]>>({});
@@ -72,13 +78,13 @@ onUnmounted(() => { disposed = true; polling.value = false; clearTimeout(timer);
       <tr v-for="o in profile.objects" :key="o.id"><td><input v-model="selection" type="checkbox" :value="o.id" :disabled="!selection.includes(o.id) && selection.length >= 6" /></td><td>{{ o.name }}<br /><code>0x{{ o.index.toString(16) }}:{{ o.subIndex }} · {{ o.id }}</code></td><td>{{ values[o.id]?.raw ?? '未读取 / 已过期' }}<br />{{ values[o.id]?.value ?? '—' }} {{ o.unit }}</td><td><input v-model="drafts[o.id]" :disabled="!o.writable || busy" :aria-label="`${o.name} 待写值`" /><small>{{ o.min }} … {{ o.max }}</small></td><td><button :disabled="busy || !status.connected" @click="action(async () => { await read(o.id); })">读取</button><button v-if="o.writable" :disabled="busy || !status.connected || !values[o.id]" @click="write(o)">写入并回读</button></td></tr>
     </tbody></table></div>
     <label v-if="profile">写入确认 <input v-model="confirmWrite" placeholder="写入 对象ID" :disabled="busy" /></label>
-    <ScopeChart v-if="profile && selection.length" :series="selection.map((id, i) => ({ id, name: profile!.objects.find(o => o.id === id)?.name ?? id, unit: profile!.objects.find(o => o.id === id)?.unit ?? '', color: ['#eba937','#8ab4f8','#4cc38a','#ef6461','#c792ea','#f28bc1'][i], values: history[id] ?? [] }))" />
+    <ScopeChart v-if="profile && selection.length" :series="selection.map((id, i) => ({ id, name: profile!.objects.find(o => o.id === id)?.name ?? id, unit: profile!.objects.find(o => o.id === id)?.unit ?? '', color: CHART_COLORS[i % CHART_COLORS.length], values: history[id] ?? [] }))" />
     <p>监控是非实时 SDO 轮询；原始整数保留精度，工程值使用浮点显示。不提供 OP、伺服使能或周期运动输出。</p>
   </section>
 </template>
 <style scoped>
 label{display:inline-flex;flex-direction:row;align-items:center;gap:6px}input[type=checkbox]{width:16px;height:16px;min-height:16px;margin:0}input[type=file]{max-width:260px;height:auto}
-.ec-master{display:grid;gap:12px}.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center}p,small{font-size:12px;color:var(--muted)}.error{color:var(--red)}table{width:100%;border-collapse:collapse}td,th{padding:8px;text-align:left;border-bottom:1px solid var(--line);font-size:12px}select{max-width:440px}input[type=number]{width:100px}td input{width:140px}td input[type=checkbox]{width:auto}small{display:block}
+.ec-master{display:grid;gap:12px}.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center}p,small{font-size:var(--sa-text-12);color:var(--muted)}.error{color:var(--red)}table{width:100%;border-collapse:collapse}td,th{padding:8px;text-align:left;border-bottom:1px solid var(--line);font-size:var(--sa-text-12)}select{max-width:440px}input[type=number]{width:100px}td input{width:140px}td input[type=checkbox]{width:auto}small{display:block}
 
 .ec-master { min-width: 0; }
 .ec-table { min-width: 0; overflow: auto; }

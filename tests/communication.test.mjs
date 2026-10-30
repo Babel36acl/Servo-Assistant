@@ -28,8 +28,9 @@ function fixture(overrides = {}) {
       module, exports: module.exports,
       require: id => {
         if (id === 'vue') return { ...vue, onMounted() {}, onUnmounted() {} };
-        if (id === './api') return { servoApi: api };
-        if (id === './communication') return evaluate(readFileSync(new URL('../src/communication.ts', import.meta.url), 'utf8'));
+        if (id === '../api') return { servoApi: api };
+        if (id === '../communication') return evaluate(readFileSync(new URL('../src/communication.ts', import.meta.url), 'utf8'));
+        if (id === '../shell/activities') return evaluate(readFileSync(new URL('../src/shell/activities.ts', import.meta.url), 'utf8'));
         return {};
       },
       window: { clearTimeout: id => timers.delete(id), setTimeout: (fn, delay) => { timers.set(++timerId, { fn, delay }); return timerId; } },
@@ -37,8 +38,11 @@ function fixture(overrides = {}) {
     });
     return module.exports;
   }
-  const script = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8').split('<script setup lang="ts">')[1].split('</script>')[0];
-  const app = evaluate(script + '\nexport { readAll, runStabilityTest, scheduleStatusPoll, pollingEnabled, connected, profile, maxRegisters, values, drafts, staleIds, failedGroups, busy, cancelRequested, readProgress, errorMessage, communicationError, testResults, testCycles, discoverConnection, discovery, discoveryMessage, discoveryActive, portName, slaveId, baudRate, protocol, parity, stopBits, discoveryEnd, connectionBlockedReason, connectionMode, connect, exportSnapshot, snapshotExportPath, notice };');
+  // P2 起：页面逻辑住在应用状态单例里（src/composables/useServo.ts），
+  // 这里直接实例化 createServo()，与线上 App.vue 首个调用方行为一致。
+  const source = readFileSync(new URL('../src/composables/useServo.ts', import.meta.url), 'utf8');
+  const names = 'readAll, runStabilityTest, scheduleStatusPoll, pollingEnabled, connected, profile, maxRegisters, values, drafts, staleIds, failedGroups, busy, cancelRequested, readProgress, errorMessage, communicationError, testResults, testCycles, discoverConnection, discovery, discoveryMessage, discoveryActive, portName, slaveId, baudRate, protocol, parity, stopBits, discoveryEnd, connectionBlockedReason, connectionMode, connect, exportSnapshot, snapshotExportPath, notice';
+  const app = evaluate(source + `\nconst __s = createServo();\nconst { ${names} } = __s;\nexport { ${names} };`);
   app.connected.value = true;
   app.profile.value = { parameters: [{ parameterId: 'P1', address: 1 }, { parameterId: 'P2', address: 3 }], statuses: [{ id: 'speed', address: 4096 }, { id: 'position', address: 4097 }] };
   return { app, timers, api };

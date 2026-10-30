@@ -1,0 +1,82 @@
+/* 风格 A 桥接层：把旧页面的变量名整体重指向风格 A。
+   只许出现 var(--sa-*)，不许出现任何色值——门禁同样盯着本文件。 */
+
+:root {
+  --bg: var(--sa-bg-0);
+  --panel: var(--sa-bg-1);
+  --panel-2: var(--sa-bg-sunken);
+  --glass: var(--sa-glass);
+  --glass-strong: var(--sa-glass-strong);
+  --glass-wash: var(--sa-glass-wash);
+
+  --line: var(--sa-line);
+  --line-soft: var(--sa-line-soft);
+  --rim: var(--sa-rim);
+
+  --ink: var(--sa-ink);
+  --muted: var(--sa-muted);
+  --faint: var(--sa-faint);
+
+  --accent: var(--sa-accent);
+  --accent-deep: var(--sa-accent-strong);
+  --accent-ink: var(--sa-accent-ink);
+  --info: var(--sa-info);
+  --green: var(--sa-success);
+  --warning: var(--sa-warning);
+  --red: var(--sa-danger);
+  --grad-brand: var(--sa-grad-brand);
+
+  --font-sans: var(--sa-font);
+  --font-mono: var(--sa-font-mono);
+
+  --r-sm: var(--sa-radius-8);
+  --r-md: var(--sa-radius-12);
+  --r-lg: var(--sa-radius-12);
+  --r-xl: var(--sa-radius-16);
+
+  --shadow-soft: var(--sa-shadow-soft);
+  --shadow-float: var(--sa-shadow-float);
+
+  --fast: var(--sa-fast);
+  --base: var(--sa-base);
+  --panel-t: var(--sa-panel);
+  --ease-out: var(--sa-ease-out);
+  --ease-in-out: var(--sa-ease-in-out);
+}
+
+body {
+  color: var(--sa-ink);
+  font-family: var(--sa-font);
+  background:
+    linear-gradient(115deg, var(--sa-accent-soft) 0%, transparent 34%),
+    linear-gradient(295deg, var(--sa-glass-wash) 0%, transparent 30%),
+    var(--sa-bg-0);
+}
+
+::selection {
+  background: var(--sa-accent-soft);
+}
+
+/* 旧页面的悬浮顶栏/吸顶条沿用玻璃语义，直接吃风格 A 的 blur 定义 */
+.app-navigation,
+.topbar,
+.parameter-toolbar {
+  -webkit-backdrop-filter: blur(var(--sa-blur)) saturate(var(--sa-saturate));
+  backdrop-filter: blur(var(--sa-blur)) saturate(var(--sa-saturate));
+}
+
+/* 平板：所有可点控件不小于 44（与壳内触控保底对齐） */
+@media (max-width: 1024px) {
+  button,
+  input,
+  select,
+  textarea,
+  summary {
+    min-height: var(--sa-touch-min);
+  }
+
+  input[type='checkbox'],
+  input[type='radio'] {
+    min-width: var(--sa-touch-min);
+  }
+}

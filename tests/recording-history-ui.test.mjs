@@ -6,7 +6,7 @@ import vm from 'node:vm';
 const require=createRequire(import.meta.url), ts=require('typescript'), vue=require('vue');
 function fixture(invoke) {
   const props=vue.reactive({path:'session-A',fileMode:false,fromUs:null,toUs:null}), events=[];
-  const script=readFileSync(new URL('../src/components/RecordingHistory.vue',import.meta.url),'utf8').split('<script setup lang="ts">')[1].split('</script>')[0];
+  const script=readFileSync(new URL('../src/features/recording/RecordingHistory.vue',import.meta.url),'utf8').split('<script setup lang="ts">')[1].split('</script>')[0];
   const module={exports:{}};
   vm.runInNewContext(ts.transpileModule(script+'\nexport { inspect, load, history, overview, busy, address, select };',{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{
     module,exports:module.exports,defineProps:()=>props,defineEmits:()=>((...args)=>events.push(args)),

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import { HISTORY_COLORS as colors } from '../../styles/chart-palette';
 type Channel = { source: string; protocol: string; slave: number; firstAddress: number; lastAddress: number };
 type Overview = { firstUs: number | null; lastUs: number | null; count: number; channels: Channel[]; warning: string | null };
 type Point = { sequence: number; timestampUs: number; source: string; protocol: string; transaction: number; raw: number; value: number; name: string; unit: string };
@@ -32,7 +33,6 @@ const graph = computed(() => {
   const first = points[0].timestampUs, last = points[points.length-1].timestampUs;
   const groups = new Map<string,Point[]>();
   for(const p of points) { const key = p.name+' / '+p.unit; const group = groups.get(key); if(group) group.push(p); else groups.set(key,[p]); }
-  const colors = ['#45d4b0','#f7b955','#73a9ff','#d59aff'];
   return [...groups].map(([name,values],i) => {
     const min = Math.min(...values.map(p=>p.value)), max = Math.max(...values.map(p=>p.value));
     const coordinates = values.map(p=>({ p, x:30+(p.timestampUs-first)/Math.max(1,last-first)*940, y:190-(p.value-min)/Math.max(1e-9,max-min)*160 }));
@@ -64,5 +64,5 @@ function advance() { if(!playing.value) return; select(cursor.value); if(cursor.
   </details>
 </template>
 <style scoped>
-.history{padding:14px;border:1px solid var(--line)}summary{cursor:pointer;margin-bottom:12px}.controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.controls select{flex:1 1 260px;min-width:0}.controls label{display:flex;gap:8px;align-items:center}.controls label input{width:130px}input[type=range]{flex:1 1 200px}svg{width:100%;background:#101015;border:1px solid var(--line);margin-top:12px}circle{cursor:pointer}circle:focus{outline:2px solid white}.error{color:var(--red)}.warning{color:var(--warning)}p,span{font-size:12px;color:var(--muted)}
+.history{padding:14px;border:1px solid var(--line)}summary{cursor:pointer;margin-bottom:12px}.controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.controls select{flex:1 1 260px;min-width:0}.controls label{display:flex;gap:8px;align-items:center}.controls label input{width:130px}input[type=range]{flex:1 1 200px}svg{width:100%;background:var(--sa-bg-sunken);border:1px solid var(--line);margin-top:12px}circle{cursor:pointer}circle:focus{outline:2px solid var(--sa-accent)}.error{color:var(--red)}.warning{color:var(--warning)}p,span{font-size:var(--sa-text-12);color:var(--muted)}
 </style>

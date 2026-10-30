@@ -1,0 +1,147 @@
+/* ==========================================================================
+   Servo Assistant · 风格 A 设计令牌（唯一真相源）
+   基座 #0A1628 · 碎玻璃 + 发光线条 · Maple Mono · 圆角 12 · 阴影收敛
+   规范对照：Material M3（color / type / shape / elevation / motion / state）
+   铁律：除本文件外，禁止在 src 内散写色值（hex / rgb / hsl）。
+   字号/间距/圆角/阴影/动效一律走 var(--sa-*)，不许写裸 px。
+   玻璃只给铬（标题栏/图标栏/侧栏/状态栏/命令面板），内容面板保持实色。
+   ========================================================================== */
+
+:root {
+  /* ---- 字体：Maple Mono 优先，本地已有则直接命中，不发网络请求 ---- */
+  --sa-font: "Maple Mono NF CN", "Maple Mono", ui-monospace, SFMono-Regular,
+    Menlo, Consolas, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI",
+    "Noto Sans SC", sans-serif;
+  --sa-font-mono: var(--sa-font);
+  --sa-tabular: tabular-nums;
+
+  /* ---- 字阶（只许用这六档 + 仪器微标两档） ---- */
+  --sa-text-10: 10px;
+  --sa-text-11: 11px;
+  --sa-text-12: 12px;
+  --sa-text-13: 13px;
+  --sa-text-14: 14px;
+  --sa-text-16: 16px;
+  --sa-text-20: 20px;
+  --sa-text-24: 24px;
+  --sa-leading-tight: 1.5;
+  --sa-leading-loose: 1.6;
+  --sa-weight-normal: 400;
+  --sa-weight-medium: 500;
+  --sa-weight-semibold: 600;
+  --sa-weight-bold: 700;
+
+  /* ---- 地基层（深蓝 #0A1628 起跳，只向上做三级） ---- */
+  --sa-bg-0: #0a1628;
+  --sa-bg-1: #0f2342;
+  --sa-bg-2: #15304f;
+  --sa-bg-sunken: #071120;
+  --sa-bg-solid: #0e1f3a;
+
+  /* ---- 玻璃（只给铬用，内容面板不用） ---- */
+  --sa-glass: rgba(13, 32, 60, 0.66);
+  --sa-glass-strong: rgba(15, 35, 66, 0.88);
+  --sa-glass-wash: rgba(148, 205, 255, 0.07);
+  --sa-blur: 20px;
+  --sa-saturate: 160%;
+
+  /* ---- 线条与发光（碎玻璃的裂纹光，1px 收敛） ---- */
+  --sa-line: rgba(148, 205, 255, 0.16);
+  --sa-line-soft: rgba(148, 205, 255, 0.09);
+  --sa-line-strong: rgba(148, 205, 255, 0.32);
+  --sa-rim: inset 0 1px 0 rgba(178, 226, 255, 0.18);
+  --sa-glow-soft: 0 0 16px rgba(90, 170, 255, 0.18);
+  --sa-glow-line: 0 0 0 1px rgba(140, 210, 255, 0.18);
+
+  /* ---- 墨色（冷白蓝，保证深底对比 4.5:1 以上） ---- */
+  --sa-ink: #eaf3ff;
+  --sa-muted: #a9c1dc;
+  --sa-faint: #6e87a3;
+
+  /* ---- 主强调（冷蓝-冰青系，替代旧香槟金） ---- */
+  --sa-accent: #6fc7ff;
+  --sa-accent-strong: #3aa5f5;
+  --sa-accent-soft: rgba(111, 199, 255, 0.14);
+  --sa-accent-ink: #04263e;
+  --sa-grad-brand: linear-gradient(90deg, #3aa5f5 0%, #6fc7ff 100%);
+
+  /* ---- 语义色（各一枚，深底校准过） ---- */
+  --sa-info: #7cc7ff;
+  --sa-success: #4ade9e;
+  --sa-warning: #fbbf24;
+  --sa-danger: #ff7a7a;
+
+  /* ---- 图表序列色（数据色，与 styles/chart-palette.ts 保持一致） ---- */
+  --sa-chart-1: #eba937;
+  --sa-chart-2: #8ab4f8;
+  --sa-chart-3: #4cc38a;
+  --sa-chart-4: #ef6461;
+  --sa-chart-5: #c792ea;
+  --sa-chart-6: #f28bc1;
+  --sa-hist-1: #45d4b0;
+  --sa-hist-2: #f7b955;
+  --sa-hist-3: #73a9ff;
+  --sa-hist-4: #d59aff;
+
+  /* ---- 间距（只许用这六档） ---- */
+  --sa-space-1: 4px;
+  --sa-space-2: 8px;
+  --sa-space-3: 12px;
+  --sa-space-4: 16px;
+  --sa-space-6: 24px;
+  --sa-space-8: 32px;
+
+  /* ---- 圆角（主角 12，其余配角） ---- */
+  --sa-radius-8: 8px;
+  --sa-radius-12: 12px;
+  --sa-radius-16: 16px;
+  --sa-radius-pill: 999px;
+
+  /* ---- 阴影（只收敛成两档，不许自创第三档） ---- */
+  --sa-shadow-soft: 0 12px 32px -16px rgba(2, 8, 18, 0.8);
+  --sa-shadow-float: 0 20px 60px -12px rgba(2, 8, 18, 0.75);
+
+  /* ---- 动效（三档 + 强 ease-out，玻璃不动大面积动画） ---- */
+  --sa-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --sa-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --sa-fast: 140ms;
+  --sa-base: 180ms;
+  --sa-panel: 240ms;
+
+  /* ---- 壳尺寸（VSCode 四区 + 命令面板） ---- */
+  --sa-titlebar-h: 40px;
+  --sa-activity-w: 52px;
+  --sa-sidebar-w: 280px;
+  --sa-statusbar-h: 28px;
+  --sa-palette-w: 560px;
+
+  /* ---- 断点与触控 ---- */
+  --sa-bp-tablet: 1024px;
+  --sa-touch-min: 44px;
+
+  /* ---- 层级 ---- */
+  --sa-z-base: 1;
+  --sa-z-sticky: 10;
+  --sa-z-palette: 80;
+  --sa-z-toast: 100;
+}
+
+/* 碎玻璃底：两层对角碎片渐变 + 底色，intensity 收敛，不抢内容 */
+.sa-shard-bg {
+  background:
+    linear-gradient(115deg, rgba(111, 199, 255, 0.07) 0%, transparent 32%),
+    linear-gradient(295deg, rgba(58, 165, 245, 0.06) 0%, transparent 28%),
+    var(--sa-bg-0);
+}
+
+/* 发光线工具：1px 高亮描边 + 一圈很淡的外发光 */
+.sa-glow-border {
+  border: 1px solid var(--sa-line);
+  box-shadow: var(--sa-rim), var(--sa-glow-soft);
+}
+
+/* 触控保底：所有可点元素不小于 44px（平板单列同样生效） */
+.sa-touch {
+  min-width: var(--sa-touch-min);
+  min-height: var(--sa-touch-min);
+}
