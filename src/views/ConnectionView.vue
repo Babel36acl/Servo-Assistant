@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useServo } from "../composables/useServo";
-const { activePage, baudRate, baudRates, busy, cancelDiscovery, connect, connected, connectionBlockedReason, connectionMode, disconnect, discoverConnection, discovery, discoveryActive, discoveryEnd, discoveryMessage, discoveryStart, discoveryTimeout, handleProfileFile, parity, portName, ports, profile, protocol, refreshPorts, serialModeLabel, slaveId, stationMax, stopBits, summary, timeoutMs } = useServo();
+import RegisterScanner from "../features/modbus/RegisterScanner.vue";
+const { activePage, allowUnsupportedBaud, baudRate, baudRates, busy, cancelDiscovery, connect, connected, connectionBlockedReason, connectionMode, disconnect, discoverConnection, discovery, discoveryActive, discoveryBaudRates, discoveryEnd, discoveryMessage, discoveryStart, discoveryTimeout, handleProfileFile, parity, portName, ports, profile, protocol, refreshPorts, selectAllDiscoveryBaudRates, serialModeLabel, slaveId, stationMax, stopBits, summary, timeoutMs, toggleDiscoveryBaud } = useServo();
 </script>
 
 <template>
@@ -121,6 +122,24 @@ const { activePage, baudRate, baudRates, busy, cancelDiscovery, connect, connect
               </label>
             </div>
 
+            <div class="ksu-field">
+              <span class="ksu-field-label">搜索波特率（当前波特率必选，可多选）</span>
+              <div class="button-row">
+                <button
+                  v-for="rate in baudRates" :key="rate" type="button"
+                  class="ksu-btn ksu-btn--sm"
+                  :class="rate === baudRate ? 'ksu-btn--primary' : discoveryBaudRates.includes(rate) ? 'ksu-btn--tonal' : 'ksu-btn--ghost'"
+                  :disabled="busy || connected" :aria-pressed="rate === baudRate || discoveryBaudRates.includes(rate)"
+                  @click="toggleDiscoveryBaud(rate)"
+                >{{ rate }}</button>
+                <button class="ksu-btn ksu-btn--ghost ksu-btn--sm" :disabled="busy || connected" @click="selectAllDiscoveryBaudRates">全选</button>
+              </div>
+              <p class="ksu-hint">
+                先在当前站号上轮询所选波特率与 RTU / ASCII 的 8E1、8N1、8O1，再扫其余站号；
+                {{ allowUnsupportedBaud ? '已允许 Profile 外波特率。' : '超出 Profile 的波特率需先打开“扩展波特率”。' }}
+              </p>
+            </div>
+
             <div v-if="discoveryActive && discovery" class="ksu-grid">
               <div class="ksu-stat">
                 <span class="ksu-stat-label">查找进度</span>
@@ -152,6 +171,8 @@ const { activePage, baudRate, baudRates, busy, cancelDiscovery, connect, connect
             </div>
           </div>
         </section>
+
+        <RegisterScanner />
         </div>
         <div class="ksu-col ksu-col--narrow">
             <section class="ksu-card">
@@ -224,6 +245,20 @@ const { activePage, baudRate, baudRates, busy, cancelDiscovery, connect, connect
                     <span class="ksu-field-label">超时 ms</span>
                     <input class="ksu-input" v-model.number="timeoutMs" type="number" min="100" max="10000" :disabled="connected || busy" />
                   </label>
+                </div>
+
+                <div class="ksu-list">
+                  <div class="ksu-row ksu-row--static">
+                    <div class="ksu-row-body">
+                      <span class="ksu-row-title">扩展波特率</span>
+                      <span class="ksu-row-sub">允许连接与查找 Profile 未列出的常用波特率；仅本次应用会话，不修改 Profile</span>
+                    </div>
+                    <div class="ksu-row-control">
+                      <button type="button" class="ksu-switch" role="switch" :aria-checked="allowUnsupportedBaud" :disabled="connected || busy" aria-label="允许 Profile 外波特率" @click="allowUnsupportedBaud = !allowUnsupportedBaud">
+                        <span class="ksu-switch-knob"></span>
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 <div v-if="!connected && connectionBlockedReason" class="ksu-banner ksu-banner--info" role="status">

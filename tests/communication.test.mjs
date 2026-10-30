@@ -41,7 +41,7 @@ function fixture(overrides = {}) {
   // P2 起：页面逻辑住在应用状态单例里（src/composables/useServo.ts），
   // 这里直接实例化 createServo()，与线上 App.vue 首个调用方行为一致。
   const source = readFileSync(new URL('../src/composables/useServo.ts', import.meta.url), 'utf8');
-  const names = 'readAll, runStabilityTest, scheduleStatusPoll, pollingEnabled, connected, profile, maxRegisters, values, drafts, staleIds, failedGroups, busy, cancelRequested, readProgress, errorMessage, communicationError, testResults, testCycles, discoverConnection, discovery, discoveryMessage, discoveryActive, portName, slaveId, baudRate, protocol, parity, stopBits, discoveryEnd, connectionBlockedReason, connectionMode, connect, exportSnapshot, snapshotExportPath, notice';
+  const names = 'readAll, runStabilityTest, scheduleStatusPoll, pollingEnabled, connected, profile, maxRegisters, values, drafts, staleIds, failedGroups, busy, cancelRequested, readProgress, errorMessage, communicationError, testResults, testCycles, discoverConnection, discovery, discoveryMessage, discoveryActive, portName, slaveId, baudRate, protocol, parity, stopBits, discoveryEnd, connectionBlockedReason, connectionMode, connect, exportSnapshot, snapshotExportPath, notice, allowUnsupportedBaud, discoveryBaudRates';
   const app = evaluate(source + `\nconst __s = createServo();\nconst { ${names} } = __s;\nexport { ${names} };`);
   app.connected.value = true;
   app.profile.value = { parameters: [{ parameterId: 'P1', address: 1 }, { parameterId: 'P2', address: 3 }], statuses: [{ id: 'speed', address: 4096 }, { id: 'position', address: 4097 }] };
@@ -161,6 +161,22 @@ test('manual connection keeps selected transport and rejects invalid discovery r
   assert.equal(requests[0].connection.parity, 'none');
   assert.equal(requests[0].connection.baudRate, 19200);
   assert.equal(requests[0].connection.stopBits, 1);
+  assert.deepEqual([...requests[0].baudRates], [19200]);
+  assert.equal(requests[0].connection.allowUnsupportedBaud, false);
+});
+
+test('discovery extends baud selection only when the session override is on', async () => {
+  const requests = [];
+  const { app } = fixture({ discover: async request => { requests.push(request); return { found: false, cancelled: false }; } });
+  app.connected.value = false;
+  app.portName.value = 'COM4';
+  app.discoveryEnd.value = 1;
+  app.allowUnsupportedBaud.value = true;
+  app.discoveryBaudRates.value = [19200, 9600];
+  await app.discoverConnection();
+  assert.equal(requests.length, 1);
+  assert.deepEqual([...requests[0].baudRates], [19200, 9600]);
+  assert.equal(requests[0].connection.allowUnsupportedBaud, true);
 });
 
 test('snapshot export reports confirmed path and preserves it on cancellation or failure', async () => {

@@ -184,6 +184,21 @@ export interface DiscoveryStatus {
   cancelled: boolean;
 }
 
+export interface RegisterValue {
+  address: number;
+  raw: number;
+}
+
+export interface ScanStatus {
+  completed: number;
+  total: number;
+  currentAddress: number | null;
+  values: RegisterValue[];
+  failedBlocks: number;
+  cancelled: boolean;
+  elapsedMs: number;
+}
+
 export type SerialProtocol = "rtu" | "ascii";
 export type ConnectionPreset = "profile" | "p300";
 export interface SerialMode { protocol: SerialProtocol; parity: Parity; stopBits: number; }

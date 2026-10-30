@@ -6,6 +6,7 @@ import type {
   CommunicationStats,
   DiscoveryStatus,
   ProbeResult,
+  ScanStatus,
   BatchWriteResult,
   ConnectionMode,
   ConnectionStatus,
@@ -22,11 +23,18 @@ import type {
 
 export const servoApi = {
   discover(request: {
-    connection: { protocol: SerialProtocol; preset: ConnectionPreset; mode: ConnectionMode; portName: string; slaveId: number; baudRate: number; parity: Parity; stopBits: number; timeoutMs: number };
+    connection: { protocol: SerialProtocol; preset: ConnectionPreset; mode: ConnectionMode; portName: string; slaveId: number; baudRate: number; parity: Parity; stopBits: number; timeoutMs: number; allowUnsupportedBaud?: boolean };
     startSlave: number; endSlave: number;
+    baudRates?: number[];
   }) { return invoke<DiscoveryStatus>("discover_device", { request }); },
   discoveryStatus() { return invoke<DiscoveryStatus>("get_discovery_status"); },
   cancelDiscovery() { return invoke<void>("cancel_discovery"); },
+  scanRegisters(request: {
+    connection: { protocol: SerialProtocol; preset: ConnectionPreset; mode: ConnectionMode; portName: string; slaveId: number; baudRate: number; parity: Parity; stopBits: number; timeoutMs: number; allowUnsupportedBaud?: boolean };
+    startAddress: number; endAddress: number; blockSize: number; includeZero: boolean;
+  }) { return invoke<ScanStatus>("scan_registers", { request }); },
+  registerScanStatus() { return invoke<ScanStatus>("register_scan_status"); },
+  cancelRegisterScan() { return invoke<void>("cancel_register_scan"); },
   configureCommunication(settings: { retries: number; maxRegisters: number }) {
     return invoke<void>("configure_communication", { settings });
   },
@@ -50,6 +58,7 @@ export const servoApi = {
     portName: string | null;
     slaveId: number;
     baudRate: number;
+    allowUnsupportedBaud?: boolean;
     parity: Parity;
     stopBits: number;
     timeoutMs: number;

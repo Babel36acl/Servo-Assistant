@@ -56,7 +56,25 @@ const parity = ref<Parity>("even");
 const stopBits = ref(1);
 const protocol = ref<SerialProtocol>("rtu");
 const stationMax = 247;
-const baudRates = computed(() => profile.value?.transport?.allowedBaudRates ?? [19200]);
+const COMMON_BAUD_RATES = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200];
+const allowUnsupportedBaud = ref(false);
+const discoveryBaudRates = ref<number[]>([19200]);
+const baudRates = computed(() => {
+  const base = profile.value?.transport?.allowedBaudRates ?? [19200];
+  const rates = allowUnsupportedBaud.value ? [...base, ...COMMON_BAUD_RATES] : [...base];
+  if (!rates.includes(baudRate.value)) rates.push(baudRate.value);
+  return [...new Set(rates)].sort((a, b) => a - b);
+});
+function toggleDiscoveryBaud(rate: number) {
+  if (rate === baudRate.value) return;
+  const selected = discoveryBaudRates.value;
+  discoveryBaudRates.value = selected.includes(rate)
+    ? selected.filter(item => item !== rate)
+    : [...selected, rate];
+}
+function selectAllDiscoveryBaudRates() {
+  discoveryBaudRates.value = [...baudRates.value];
+}
 function serialModeLabel(mode: SerialMode) {
   return `${mode.protocol.toUpperCase()} · 8${{ none: "N", even: "E", odd: "O" }[mode.parity]}${mode.stopBits}`;
 }
@@ -108,6 +126,17 @@ const discoveryEnd = ref(247);
 const discoveryTimeout = ref(200);
 let discoveryTimer: number | undefined;
 
+watch(baudRate, (rate) => {
+  if (!discoveryBaudRates.value.includes(rate)) discoveryBaudRates.value = [...discoveryBaudRates.value, rate];
+});
+watch(allowUnsupportedBaud, (enabled) => {
+  if (enabled) return;
+  const allowed = profile.value?.transport?.allowedBaudRates ?? [19200];
+  if (!allowed.includes(baudRate.value)) baudRate.value = profile.value?.transport?.defaultBaudRate ?? allowed[0];
+  discoveryBaudRates.value = discoveryBaudRates.value.filter(rate => allowed.includes(rate));
+  if (!discoveryBaudRates.value.length) discoveryBaudRates.value = [baudRate.value];
+});
+
 async function pollDiscovery() {
   if (!discoveryActive.value || disposed) return;
   try { discovery.value = await servoApi.discoveryStatus(); } catch { /* Final command returns errors. */ }
@@ -124,7 +153,15 @@ async function discoverConnection() {
   discovery.value = null;
   discoveryMessage.value = "正在查找";
   errorMessage.value = "";
-  const resultPromise = servoApi.discover({ connection: { protocol: protocol.value, preset: "profile", mode: 'serial', portName: portName.value, slaveId: slaveId.value, baudRate: baudRate.value, parity: parity.value, stopBits: stopBits.value, timeoutMs: discoveryTimeout.value }, startSlave: discoveryStart.value, endSlave: discoveryEnd.value });
+  const baudSelection = [...new Set([baudRate.value, ...discoveryBaudRates.value])]
+    .filter(rate => baudRates.value.includes(rate));
+  if (!baudSelection.length) {
+    discoveryActive.value = false;
+    busy.value = false;
+    showError("请至少选择一个搜索波特率");
+    return;
+  }
+  const resultPromise = servoApi.discover({ connection: { protocol: protocol.value, preset: "profile", mode: 'serial', portName: portName.value, slaveId: slaveId.value, baudRate: baudRate.value, allowUnsupportedBaud: allowUnsupportedBaud.value, parity: parity.value, stopBits: stopBits.value, timeoutMs: discoveryTimeout.value }, startSlave: discoveryStart.value, endSlave: discoveryEnd.value, baudRates: baudSelection });
   discoveryTimer = window.setTimeout(pollDiscovery, 250);
   try {
     const result = await resultPromise;
@@ -293,6 +330,8 @@ async function loadProfileJson(json: string) {
     if (profile.value) {
       slaveId.value = profile.value.transport.defaultSlaveId;
       baudRate.value = profile.value.transport.defaultBaudRate;
+      allowUnsupportedBaud.value = false;
+      discoveryBaudRates.value = [...new Set(profile.value.transport.allowedBaudRates)];
       discoveryStart.value = 1;
       discoveryEnd.value = 247;
       protocol.value = profile.value.transport.kind === "modbus-ascii" ? "ascii" : "rtu";
@@ -351,6 +390,7 @@ async function connect() {
       portName: connectionMode.value === "serial" ? portName.value || null : null,
       slaveId: slaveId.value,
       baudRate: baudRate.value,
+      allowUnsupportedBaud: allowUnsupportedBaud.value,
       protocol: protocol.value,
       preset: "profile",
       parity: parity.value,
@@ -671,5 +711,5 @@ function formatTimestamp(timestampMs: number) {
 onMounted(refreshAudit);
 onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearTimeout(statusTimer); window.clearTimeout(discoveryTimer); if (discoveryActive.value) void servoApi.cancelDiscovery(); });
 
-  return { backgroundActivity, activePage, currentPage, profile, summary, connected, connectionMode, ports, portName, slaveId, baudRate, parity, stopBits, protocol, stationMax, baudRates, timeoutMs, connectionBlockedReason, values, drafts, statuses, statusUpdatedAt, audit, comparison, snapshotExportPath, selectedBatch, scopeRunning, sampleInterval, scopeChannels, scopeData, query, selectedGroup, busy, notice, errorMessage, statusTimer, pollingEnabled, communicationError, retries, maxRegisters, communicationStats, readActive, cancelRequested, readProgress, failedGroups, staleIds, testActive, testCycles, testProgress, testResults, pollInFlight, disposed, discoveryActive, discovery, discoveryMessage, discoveryStart, discoveryEnd, discoveryTimeout, discoveryTimer, probeRange, groups, comparisonById, changedDifferences, headlineStatuses, scopePalette, scopeSeries, scopeOptions, canApply, canPersist, filteredParameters, confirmReq, confirmInput, confirmError, confirmField, confirmResolve, confirmOpener, serialModeLabel, pollDiscovery, discoverConnection, cancelDiscovery, updateDiagnostics, applyCommunicationSettings, saveCommunicationSettings, pauseForOperation, runStabilityTest, requestConfirm, closeConfirm, showError, loadProfileJson, handleProfileFile, refreshPorts, connect, disconnect, readAll, readParameterGroups, exportSnapshot, handleSnapshotFile, writeSelectedBatch, clearComparison, writeOne, applyChanges, persistChanges, scheduleStatusPoll, normalizeSampleInterval, refreshAudit, isDirty, riskLabel, hex, formatTimestamp };
+  return { backgroundActivity, activePage, currentPage, profile, summary, connected, connectionMode, ports, portName, slaveId, baudRate, parity, stopBits, protocol, stationMax, baudRates, allowUnsupportedBaud, discoveryBaudRates, toggleDiscoveryBaud, selectAllDiscoveryBaudRates, timeoutMs, connectionBlockedReason, values, drafts, statuses, statusUpdatedAt, audit, comparison, snapshotExportPath, selectedBatch, scopeRunning, sampleInterval, scopeChannels, scopeData, query, selectedGroup, busy, notice, errorMessage, statusTimer, pollingEnabled, communicationError, retries, maxRegisters, communicationStats, readActive, cancelRequested, readProgress, failedGroups, staleIds, testActive, testCycles, testProgress, testResults, pollInFlight, disposed, discoveryActive, discovery, discoveryMessage, discoveryStart, discoveryEnd, discoveryTimeout, discoveryTimer, probeRange, groups, comparisonById, changedDifferences, headlineStatuses, scopePalette, scopeSeries, scopeOptions, canApply, canPersist, filteredParameters, confirmReq, confirmInput, confirmError, confirmField, confirmResolve, confirmOpener, serialModeLabel, pollDiscovery, discoverConnection, cancelDiscovery, updateDiagnostics, applyCommunicationSettings, saveCommunicationSettings, pauseForOperation, runStabilityTest, requestConfirm, closeConfirm, showError, loadProfileJson, handleProfileFile, refreshPorts, connect, disconnect, readAll, readParameterGroups, exportSnapshot, handleSnapshotFile, writeSelectedBatch, clearComparison, writeOne, applyChanges, persistChanges, scheduleStatusPoll, normalizeSampleInterval, refreshAudit, isDirty, riskLabel, hex, formatTimestamp };
 }
