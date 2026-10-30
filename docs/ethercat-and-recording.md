@@ -42,6 +42,9 @@ EtherCAT 对象读写仍在通信工作台完成。
 属于主动总线操作。先停用其他主站并确认设备处于适合配置的状态。
 
 发现列表显示位置、配置地址、Vendor/Product/Revision、AL 状态和错误码。
+从站诊断提供只读的 AL 状态/状态码、活动端口位图、parent/entry 端口、DC active/DCnext，
+以及 ESC 寄存器 0x0300..0x0311 的原始错误计数；不进入 OP、不改变总线状态，也不解释
+设备未声明的厂商语义。错误计数读取失败时其余诊断字段仍保留，并由界面明确提示。
 导入 `ethercat-1.0` Profile 后，只有 Vendor/Product 匹配且从站声明 CoE 时才能访问对象。
 Profile 示例在 `examples/ethercat-profile.example.json`；示例标识和地址均虚构。
 

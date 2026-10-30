@@ -43,6 +43,12 @@ Local upstream patches (kept small and documented for future upgrades):
 The master initializes mailbox communication in PRE-OP. It never maps PDO outputs,
 requests OP, enables a drive, or runs a motion loop. Configuration writes use normal
 CoE SDO access with write-before comparison, explicit confirmation and readback.
+
+`sa_slave_diagnostics` is read-only: it returns AL status/code, topology ports,
+DC active/next and the raw ESC error-counter bytes at 0x0300..0x0311 (FPRD read),
+without requesting OP or sending outputs. Error-counter unavailability is reported
+to the UI instead of being fabricated.
+
 SOEM itself performs protocol-level frame/mailbox retries; the application does not
 repeat a failed SDO write. Hardware timing and device compatibility require testing
 on the intended isolated bus.
