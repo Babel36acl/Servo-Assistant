@@ -13,14 +13,13 @@ import {
   setColorMode,
   setRailExpanded,
   setTextScale,
-  toggleFloatingDock,
   uiStore,
   type ColorMode,
   type TextScale,
 } from '../shell/ui-mode';
 
 /** 设置页（FlClash 语言）：分组卡 + 设置行，
- *  外观 = 主题模式 / 侧栏展开 / 悬浮底栏 / 字号缩放；关于 = 版本 / 仓库 / 当前主题。
+ *  外观 = 主题模式 / 侧栏展开 / 字号缩放；关于 = 版本 / 仓库 / 当前主题。
  *  视觉只有一套体系，不再有 Miuix/Material 切换。 */
 const themeModeOptions = [
   { value: 'dark', label: '深色' },
@@ -54,10 +53,6 @@ function onTextScale(value: string): void {
 
 function onRailExpanded(value: boolean): void {
   setRailExpanded(value);
-}
-
-function onFloatingDock(value: boolean): void {
-  if (value !== uiStore.floatingDock) toggleFloatingDock();
 }
 
 async function copyRepo(): Promise<void> {
@@ -99,16 +94,6 @@ async function copyRepo(): Promise<void> {
                 :model-value="uiStore.railExpanded"
                 label="展开侧栏"
                 @update:modelValue="onRailExpanded"
-              />
-            </template>
-          </KsuRow>
-
-          <KsuRow title="悬浮底栏" sub="开启后宽屏也使用悬浮胶囊底栏（默认关闭，走左侧图标栏）">
-            <template #control>
-              <KsuSwitch
-                :model-value="uiStore.floatingDock"
-                label="悬浮底栏"
-                @update:modelValue="onFloatingDock"
               />
             </template>
           </KsuRow>

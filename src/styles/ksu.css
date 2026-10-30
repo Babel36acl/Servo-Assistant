@@ -5,7 +5,7 @@
    结构：
      .ksu-app > .ksu-titlebar(36px 拖拽条 + 右上窗口按钮)
                 + .ksu-body(.ksu-rail 48/220 + .ksu-main 整页滚动)
-                + .ksu-dock（<840 或开启悬浮底栏）
+                + .ksu-dock（<840 底部导航）
      页面：.ksu-page > .ksu-page-head(72px 页标题 + 动作区) + .ksu-page-body
            页面内栅格：.ksu-grid > .ksu-card(.ksu-span-2 / .ksu-span-full)
    ========================================================================== */
@@ -380,7 +380,7 @@
 }
 
 /* ==========================================================================
-   5. 窄屏底栏（<840）与悬浮胶囊坞（floatingDock）
+   5. 窄屏底栏（<840）
    ========================================================================== */
 .ksu-dock {
   display: none;
@@ -397,13 +397,6 @@
   background: var(--ksu-dock-bg);
   box-shadow: var(--ksu-shadow-float);
   max-width: calc(100vw - 2 * var(--ksu-dock-side));
-}
-
-.ksu-dock.is-floating {
-  background: color-mix(in srgb, var(--ksu-dock-bg) 86%, transparent);
-  -webkit-backdrop-filter: blur(20px) saturate(1.6);
-  backdrop-filter: blur(20px) saturate(1.6);
-  border: 1px solid var(--ksu-divider);
 }
 
 /* 普通底栏：贴底整宽 */
@@ -1978,40 +1971,10 @@ a.ksu-row:active {
   }
 }
 
-/* 悬浮底栏打开时（宽屏也走底栏，隐藏侧栏） */
-.ksu-app.is-dock .ksu-rail {
-  display: none;
-}
-
-.ksu-app.is-dock .ksu-dock {
-  display: flex;
-}
-
-.ksu-app.is-dock .ksu-page-bottom {
-  height: calc(var(--ksu-dock-h) + var(--ksu-dock-bottom) + 40px);
-}
-
-/* 窄屏手机宽度：悬浮坞只留图标，页头压缩 */
+/* 窄屏手机宽度：页头压缩 */
 @media (max-width: 599.98px) {
   .ksu-titlebar-drag {
     padding: 0 8px;
-  }
-
-  .ksu-dock:not(.is-bar) .ksu-dock-label {
-    display: none;
-  }
-
-  .ksu-dock:not(.is-bar) .ksu-dock-item {
-    min-width: var(--ksu-touch-min);
-    padding: 0 2px;
-  }
-
-  .ksu-dock:not(.is-bar) {
-    left: 12px;
-    right: 12px;
-    transform: none;
-    max-width: none;
-    justify-content: space-around;
   }
 
   .ksu-page {

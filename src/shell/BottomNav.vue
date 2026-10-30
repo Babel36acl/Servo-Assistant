@@ -2,11 +2,9 @@
 import { computed, ref } from 'vue';
 import KsuSheet from '../components/ksu/KsuSheet.vue';
 import { dockPageIds, morePageIds, morePageSet, pageById, type PageId } from './activities';
-import { uiStore } from './ui-mode';
 
 /** 窄屏导航：最多 5 项（KSU 规则），4 个主页面 + 「更多」。
- *  Miuix + 悬浮底栏开关打开 → 悬浮胶囊坞（FloatingBottomBar：64 高 / 4 内边距 / 指示器 15% primary）；
- *  否则 → 贴底普通导航（Miuix NavigationBar / Material ShortNavigationBar：64 高，图标 26 + 12sp 标签）。
+ *  贴底普通导航（Miuix NavigationBar：64 高，图标 26 + 12sp 标签），
  *  「更多」用底部弹层补足诊断 / 审计 / 设置。 */
 const props = defineProps<{
   active: PageId;
@@ -20,7 +18,6 @@ const moreOpen = ref(false);
 const dockPages = computed(() => dockPageIds.map((id) => pageById(id)));
 const morePages = computed(() => morePageIds.map((id) => pageById(id)));
 const moreActive = computed(() => morePageSet.has(props.active));
-const floating = computed(() => uiStore.floatingDock);
 const moreBadgeCount = computed(
   () => morePageIds.filter((id) => props.badges?.[id] !== undefined).length,
 );
@@ -39,7 +36,7 @@ const moreIcon =
 </script>
 
 <template>
-  <nav class="ksu-dock" :class="floating ? 'is-floating' : 'is-bar'" aria-label="主导航">
+  <nav class="ksu-dock is-bar" aria-label="主导航">
     <button
       v-for="page in dockPages"
       :key="page.id"

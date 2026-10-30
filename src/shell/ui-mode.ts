@@ -1,6 +1,6 @@
 /* UI 偏好 —— 响应式单例 store（FlClash Windows 方案）。
    颜色只有深/浅/跟随系统（data-theme），字号缩放 0.9/1/1.1（data-text-scale），
-   侧栏展开与悬浮底栏各自持久化。上一版 Miuix/Material 的 uiMode 仅保留字段兼容，
+   侧栏展开状态持久化。上一版 Miuix/Material 的 uiMode 仅保留字段兼容，
    不再参与任何视觉分支（FlClash 只有一套视觉体系）。 */
 
 import { computed, reactive, watch } from 'vue';
@@ -12,7 +12,6 @@ export type TextScale = 0.9 | 1 | 1.1;
 
 const KEY_UI_MODE = 'sa.uiMode';
 const KEY_COLOR_MODE = 'sa.colorMode';
-const KEY_FLOATING_DOCK = 'sa.floatingDock';
 const KEY_RAIL_EXPANDED = 'sa.railExpanded';
 const KEY_TEXT_SCALE = 'sa.textScale';
 
@@ -67,8 +66,6 @@ export const uiStore = reactive({
   /** 兼容字段：FlClash 单视觉体系，不再暴露切换 UI */
   uiMode: readUiMode(),
   colorMode: readColorMode(),
-  /** 悬浮胶囊底栏（窄屏默认普通底栏，开启后用悬浮坞） */
-  floatingDock: readBool(KEY_FLOATING_DOCK, false),
   /** 侧栏展开态（FlClash NavigationSidebar 48 ⇄ 220） */
   railExpanded: readBool(KEY_RAIL_EXPANDED, false),
   /** 字号缩放（Apple Dynamic Type 基准 1.0） */
@@ -94,7 +91,7 @@ export function applyUiMode(): void {
   root.style.colorScheme = resolvedTheme.value;
 }
 
-/** 截图/调试用 URL 覆盖：?theme=light&textScale=1.1&rail=1&dock=1（不改常态逻辑）。 */
+/** 截图/调试用 URL 覆盖：?theme=light&textScale=1.1&rail=1（不改常态逻辑）。 */
 function applyUrlOverrides(): void {
   if (typeof window === 'undefined') return;
   const params = new URLSearchParams(window.location.search);
@@ -103,7 +100,6 @@ function applyUrlOverrides(): void {
   const scale = Number(params.get('textScale'));
   if (scale === 0.9 || scale === 1.1) uiStore.textScale = scale;
   if (params.get('rail') === '1') uiStore.railExpanded = true;
-  if (params.get('dock') === '1') uiStore.floatingDock = true;
 }
 
 /** 仅供 main.ts 调用：补齐初始 dataset 并挂系统明暗监听。 */
@@ -130,11 +126,6 @@ export function setColorMode(mode: ColorMode): void {
 /** 快捷键：深色 ⇄ 浅色（脱离 system，写入显式值）。 */
 export function toggleColorMode(): void {
   setColorMode(resolvedTheme.value === 'dark' ? 'light' : 'dark');
-}
-
-export function toggleFloatingDock(): void {
-  uiStore.floatingDock = !uiStore.floatingDock;
-  writeString(KEY_FLOATING_DOCK, uiStore.floatingDock ? '1' : '0');
 }
 
 export function toggleRailExpanded(): void {

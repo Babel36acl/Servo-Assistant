@@ -38,3 +38,6 @@
 - 修复：新增 `scripts/with-msvc.cmd`（优先 VS2022 → VsDevCmd → `CC=CXX=clang-cl` → TMP 指向仓库 `.tmp`），VSCode 任务全部改经它；`launch.json` 补 preLaunchTask（Vite 后台任务 + 1420 ready 匹配）；`vite dev` 端口说明改 1420。
 - SOEM 兼容 clang-cl 的两处小补丁：`osal.h` 线程原型改 `void **`；`osal_win32.h` 删除 clang 误报冲突的 `osal_gettimeofday` 原型（定义仍在 osal.c，无其它调用方），已记入 `src-tauri/native/README.md`。
 - 验证：`cargo build`、`cargo test --lib`（60 passed, 1 ignored）、`cargo clippy -D warnings` 全过；`scripts\with-msvc.cmd pnpm tauri dev` 实机起窗（1440×900、无边框自绘标题栏正常），点 ✕ 后进程正常退出——窗口关闭修复实机确认。
+## 2026-10-30（移除悬浮底栏）
+- 用户反馈悬浮底栏开启有 bug 且用不到：删除设置页「悬浮底栏」行、ui-mode 的 floatingDock 状态/持久化/`?dock=` 覆盖、AppShell 的 is-dock 分支、BottomNav 悬浮坞分支与对应 CSS；保留 <840px 普通贴底导航，README 与注释同步。
+- 验证：pnpm lint:tokens / build / test 23/23 全绿；设置页与 800×1100 窄屏截图复核。

@@ -140,7 +140,6 @@
   --ksu-dock-bottom: 16px;
   --ksu-dock-side: 28px;
   --ksu-dock-tab-min-w: 76px;
-  --ksu-dock-indicator-h: 56px;
   --ksu-dock-icon: 24px;
   --ksu-dock-label: 11px;
   --ksu-dock-label-leading: 13px;
@@ -311,11 +310,6 @@
   --sa-tab-slider-thumb: var(--ksu-slider-thumb);
   --sa-tab-select-h: var(--ksu-field-h);
   --sa-tab-sheet-radius: var(--ksu-radius-16);
-  --sa-tab-dock-h: var(--ksu-dock-h);
-  --sa-tab-dock-radius: var(--ksu-radius-pill);
-  --sa-tab-dock-pad: var(--ksu-dock-pad);
-  --sa-tab-dock-bottom: var(--ksu-dock-bottom);
-  --sa-tab-dock-bg: var(--ksu-dock-bg);
   --sa-tab-badge-bg: var(--ksu-primary);
   --sa-tab-badge-ink: var(--ksu-on-primary);
   --sa-tab-page-bottom: var(--ksu-page-bottom);
