@@ -17,9 +17,9 @@ JSON Profile 导入
 ## 当前能力
 
 - 导入并校验设备 JSON Profile，不限制参数 ID 命名方式或寄存器地址布局。
-- 支持安全模拟器和真实 Modbus RTU / ASCII 串口连接。
+- 支持安全模拟器、Modbus RTU / ASCII 串口、Modbus TCP，以及 EtherCAT 主站连接入口。
 - 自动查找可多选搜索波特率，并显式允许 Profile 之外的常用波特率（仅本次应用会话，不修改 Profile）。
-- 提供只读保持寄存器扫描：指定站号与地址范围，按 FC03 分块读取，列出非零值并可导出 CSV；扫描期间独占串口，不写入设备。
+- 提供只读保持寄存器扫描：指定站号与地址范围，按 FC03 分块读取，列出非零值并可导出 CSV；扫描期间独占链路（串口或 TCP），不写入设备。
 - 支持参数读取、单项安全写入、快照导出、差异比较和选择性批量写入。
 - 高风险参数需要输入 `写入 <parameterId>`；所有写入都执行写前值比较和写后回读。
 - Profile 可选择定义应用和持久化命令；未定义时 GUI 不允许执行对应操作。
@@ -36,7 +36,7 @@ JSON Profile 导入
 录制绑定当时的设备配置，支持会话名称与备注、文件选择、全会话时间/协议筛选、实时跟随、历史曲线定位事务，以及保留故障前后窗口的一次性触发录制。
 PCAP/PCAPNG 可按文件或分卷目录统一检索；录制与网卡捕获的写入、摘要错误会显示完整性告警。
 支持 PCAP/PCAPNG 导入、EtherCAT 标准 Datagram、邮箱头和显式 PDO 映射解析。
-Windows 主站通过 SOEM/Npcap 提供从站发现、PRE-OP 下的 CoE/SDO 参数配置及最多六通道监控，写入执行确认、写前比较和回读校验。
+Windows 主站通过 SOEM/Npcap 提供从站发现、PRE-OP 下的 CoE/SDO 参数配置及最多六通道监控，写入执行确认、写前比较和回读校验。“设备与连接”的连接方式菜单也可直接接管 EtherCAT 网卡；主站状态与通信工作台共享，参数工作区仍使用 Modbus Profile。
 
 Npcap 需单独安装；未安装时仍可使用 Modbus 和离线功能。主站不提供 OP/运动输出。
 详细范围、Profile 契约、录制完整性和设备验收见 [EtherCAT 与录制说明](docs/ethercat-and-recording.md)。
@@ -82,7 +82,8 @@ scripts\with-msvc.cmd cargo clippy --manifest-path src-tauri/Cargo.toml -- -D wa
 - `examples/servo-profile.example.json`：不对应任何真实设备的格式示例
 - `src-tauri/src/profile.rs`：Profile 反序列化、唯一性、范围和缩放校验
 - `src-tauri/src/modbus.rs`：FC03/FC06、RTU CRC / ASCII LRC、异常响应和帧间隔
-- `src-tauri/src/runtime.rs`：串口独占、模拟器、安全写入、自动查找与寄存器扫描命令
+- `src-tauri/src/modbus_tcp.rs`：Modbus TCP / MBAP、FC03/FC06、事务号校验与超时重试
+- `src-tauri/src/runtime.rs`：串口 / TCP 独占、模拟器、安全写入、自动查找与寄存器扫描命令
 - `src-tauri/src/discovery.rs`：查找候选排序、多波特率校验与串口格式遍历
 - `src-tauri/src/scan.rs`：只读寄存器扫描的分块、取消与结果汇总
 - `src-tauri/src/audit.rs`：SQLite 持久审计与快照存储
@@ -92,6 +93,7 @@ scripts\with-msvc.cmd cargo clippy --manifest-path src-tauri/Cargo.toml -- -D wa
 - `src/composables/useServo.ts`：应用状态单例
 - `src/views/`：七个工作区视图（含设置）
 - `src/features/{recording,ethercat}/`：录制解析 / EtherCAT 主站
+- `src/features/ethercat/EthercatConnectCard.vue`：连接页的 EtherCAT 网卡接管入口
 - `src/features/modbus/RegisterScanner.vue`：只读寄存器扫描卡片（地址范围 / 进度 / CSV）
 - `src/styles/tokens-a.css`：设计令牌唯一色源（`pnpm lint:tokens` 门禁）
 - `src/styles/ksu.css`：壳与组件的布局/交互样式；`views.css` 只放视图微调
@@ -107,7 +109,13 @@ scripts\with-msvc.cmd cargo clippy --manifest-path src-tauri/Cargo.toml -- -D wa
 
 ### 寄存器扫描
 
-“设备与连接”页的寄存器扫描只使用 FC03 读取，不写入设备。地址范围为 0..65535，单次最多 4096 个地址，每块 1～100 个寄存器；失败块计数后继续，取消在当前事务结束后生效，结果可导出 CSV。扫描需要断开设备连接并独占串口，期间的报文仍进入现有录制。未知设备的部分读操作可能有厂商自定义副作用，应先核对手册；扫描结果不代表设备已通过兼容性验收。
+“设备与连接”页的寄存器扫描只使用 FC03 读取，不写入设备。地址范围为 0..65535，单次最多 4096 个地址，每块 1～100 个寄存器；失败块计数后继续，取消在当前事务结束后生效，结果可导出 CSV。扫描需要断开设备连接并独占链路（串口或 Modbus TCP），期间的报文仍进入现有录制。未知设备的部分读操作可能有厂商自定义副作用，应先核对手册；扫描结果不代表设备已通过兼容性验收。
+
+### Modbus TCP
+
+连接方式选择“TCP”后填写主机与端口，从站号作为 MBAP 单元标识；只使用 FC03/FC06，帧格式为 MBAP + PDU。TCP 不使用波特率、校验位和停止位，但仍沿用 Profile 的参数地址、缩放和写入风险规则。读取支持超时重试，写入与串口一样不会自动重发；事务号、协议标识、单元标识、长度或回显不一致都会返回诊断。原始收发按 `modbus-tcp` 协议进入通信录制；TCP 录制不包含串口级 CRC/LRC 统计。
+
+自动查找和“扩展波特率”只适用于串口；TCP 设备需要已知主机/端口并使用固定站号。软件测试与本地环回测试不能代替真实网关/设备的兼容性验收。
 
 ### 便携版与 Linux
 
@@ -117,12 +125,12 @@ Linux x64 在 Ubuntu 22.04 构建：Debian 12 及以上使用 DEB，Fedora 使�
 
 ### 读取与采集行为
 
-- 通讯设置在当前应用会话内生效：默认每组最多 16 个寄存器（1～100），CRC / LRC / 超时额外重试 2 次（0～3）。仅 FC03 读取可重试，FC06 写入不会自动重发；设备异常响应、错误站号和格式错误直接返回诊断。
+- 通讯设置在当前应用会话内生效：默认每组最多 16 个寄存器（1～100），CRC / LRC（TCP 无校验）/ 超时额外重试 2 次（0～3）。仅 FC03 读取可重试，FC06 写入不会自动重发；设备异常响应、错误站号和格式错误直接返回诊断。
 - 参数读取逐组显示进度，成功组即时更新，失败或取消时保留旧值并标记过期；可以只重读失败 / 未完成组。刷新保留未提交编辑；过期值须重新读取后才能单项写入。
 - 状态轮询与曲线采集分别控制。默认 250 ms 是一次状态读取完成后的等待时间，不是精确采样周期；支持 200/250/500/1000/3000 ms 及 50～60000 ms 自定义。通讯恢复自动恢复正常间隔，不清除其他操作的错误。
 - 只读稳定性测试交替读取 Profile 中最长连续状态区的 1 个和最多 100 个寄存器。长帧对照有意不按分组上限拆分；默认 100 轮，可选 1～1000 轮。测试期间暂停日常轮询；取消等待当前事务（含有限重试）结束，随后保留统计并按原开关恢复轮询。
-- 首次成功、重试恢复、最终失败分别统计；CRC、超时、重试次数和最近失败地址/数量/尝试次数/接收字节可见。真实串口每次读取成功、失败和重试写入现有 SQLite 操作证据；模拟器测试结果不能证明实机链路稳定。
-- 前端状态回归运行 `pnpm test`；串口故障注入与原有核心测试运行 `cargo test --manifest-path src-tauri/Cargo.toml`。故障测试覆盖部分帧超时、CRC 恢复、重试上限、设备异常不重试、写入不重发和长短帧读取边界。
+- 首次成功、重试恢复、最终失败分别统计；CRC、超时、重试次数和最近失败地址/数量/尝试次数/接收字节可见。真实串口或 TCP 每次读取成功、失败和重试写入现有 SQLite 操作证据；模拟器测试结果不能证明实机链路稳定。
+- 前端状态回归运行 `pnpm test`；串口故障注入、TCP 环回与原有核心测试运行 `cargo test --manifest-path src-tauri/Cargo.toml`。故障测试覆盖部分帧超时、CRC 恢复、重试上限、设备异常不重试、写入不重发、长短帧读取边界和 MBAP 事务校验。
 
 自动化测试和模拟器只能验证软件契约。每份设备 Profile 仍需针对其目标设备分别完成读取、缩放、写入、回读、应用和持久化验收；未定义或未实测的设备能力不能视为已兼容。
 

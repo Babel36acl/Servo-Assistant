@@ -18,10 +18,10 @@
 | 模块 | 能力 |
 |---|---|
 | 应用 | Tauri 2 + Vue 3；7 个工作区；48 个 Tauri 命令；FlClash 视觉体系；浅/深色与字号缩放 |
-| Modbus | RTU / ASCII；FC03/FC06；自动查找（站号范围、多选波特率、RTU/ASCII × 8E1/8N1/8O1，可显式扩展 Profile 外波特率）；只读寄存器扫描（FC03，CSV 导出）；分组读取、重试、写前比较、写后回读、批量写、快照导出/比较、SQLite 审计 |
+| Modbus | RTU / ASCII / TCP（MBAP）；FC03/FC06；自动查找（站号范围、多选波特率、RTU/ASCII × 8E1/8N1/8O1，可显式扩展 Profile 外波特率）；只读寄存器扫描（FC03，CSV 导出）；分组读取、重试、写前比较、写后回读、批量写、快照导出/比较、SQLite 审计 |
 | 录制 | JSONL 有界队列/分卷/摘要；全会话索引与检索；故障触发录制；PCAP/PCAPNG 导入导出；Modbus 事务与 EtherCAT 帧解析 |
-| EtherCAT | Windows + Npcap；SOEM 1.4.0 静态编译；PRE-OP 下发现从站、CoE SDO 读写、6 通道轮询曲线（300 点） |
-| 测试 | 前端 `node --test` 24 项；Rust 66 项 + 1 个崩溃恢复子进程入口（忽略） |
+| EtherCAT | Windows + Npcap；SOEM 1.4.0 静态编译；PRE-OP 下发现从站、CoE SDO 读写、6 通道轮询曲线（300 点）；连接页可直接接管主站 |
+| 测试 | 前端 `node --test` 25 项；Rust 70 项 + 1 个崩溃恢复子进程入口（忽略） |
 
 ### 2.2 明确边界
 
@@ -62,7 +62,7 @@
 | 惯量辨识、自动调谐、频率响应、陷波器 | [三菱 MR Configurator2](https://fa-dic.mitsubishielectric.co.jp/fa/products/drv/servo/smerit/mr2/05.html)、[Beckhoff TE5960](https://document.beckhoff.com/te5960.pdf)、[Veichi](https://www.veichi.cn/Uploads/20250205014412_988107.pdf)、[Servotronix](https://www.servotronix.cn/file/product/1049/20260817115718185846490.pdf)、[Omron](https://www.fa.omron.com.cn/data_pdf/mnu/dilm-cn5-01c_final.pdf) | 无 | P2（优先驱动侧自整定） |
 | 波形记录/触发、FFT、阶跃指标、报告 | 各家伺服调试软件 | 曲线 300 点；无分析、无报告 | P1 |
 | FoE 固件升级、EEPROM 写 | [EC-Lyser](http://motrotech.com/ethercat/EC-Lyser.html)、TwinCAT、ZLG | 明确不做 | P2/不做 |
-| Modbus TCP、FC16/FC23、寄存器扫描 | 通用 Modbus 调试器 | 仅 RTU/ASCII FC03/06；无原始寄存器扫描 | P1/P2 |
+| Modbus TCP、FC16/FC23、寄存器扫描 | 通用 Modbus 调试器 | 已支持寄存器扫描与 Modbus TCP；FC16/FC23 未做 | 已落地 / P2 |
 | 自动更新、i18n、插件化 | 桌面软件常备 | 无 | P2 |
 
 ## 4. 扩展方向
@@ -127,10 +127,10 @@
 
 ### 4.4 Modbus 设备层
 
-- **寄存器扫描/搜索（已落地，2026-10-30）**：`RegisterScanner` 按 FC03 分块读取指定站号与地址区间，列出非零值，支持包含 0 值、取消与 CSV 导出；单次最多 4096 个地址、每块 1～100 个寄存器。仅读、不写；扫描期间独占串口，需要断开设备连接；失败块计数后继续；报文进入现有录制，结果写入审计。
+- **寄存器扫描/搜索（已落地，2026-10-30）**：`RegisterScanner` 按 FC03 分块读取指定站号与地址区间，列出非零值，支持包含 0 值、取消与 CSV 导出；单次最多 4096 个地址、每块 1～100 个寄存器。仅读、不写；扫描期间独占链路（串口或 TCP），需要断开设备连接；失败块计数后继续；报文进入现有录制，结果写入审计。
 - **自动查找多波特率（已落地，2026-10-30）**：搜索波特率可多选，默认来自 Profile；新增会话级“扩展波特率”开关，可显式启用 Profile 之外的常用档位（1200～115200），不修改 Profile。候选顺序改为先在当前站号上遍历所选波特率与串口格式，再扫描其余站号，避免为了换一个波特率先扫完整站号范围。
+- **Modbus TCP（已落地，2026-10-30）**：新增 MBAP + FC03/FC06 的 TCP 客户端，连接方式菜单选择 TCP 后填写主机/端口；沿用 Profile 的地址、缩放与写入安全规则，读取超时重试、写入不自动重发，事务号/协议标识/单元标识/长度/回显均校验；报文按 `modbus-tcp` 进入录制。自动查找和扩展波特率仍只适用于串口。
 - **FC16 / FC23**：批量写由逐条 FC06 改为一次多寄存器；保持写前比较与回读策略。
-- **Modbus TCP**：传输层抽象为 Serial / TCP，扩大设备覆盖；Profile 1.0 契约不变，新增字段可选。
 - **Profile 编辑器 / CSV 导入**：`housine/` 下现有 214/136 条参数为手工维护；提供 CSV/Excel → JSON 转换、校验、diff，降低 Profile 制作成本。
 
 ### 4.5 工程化
@@ -138,7 +138,7 @@
 - 自动更新（`tauri-plugin-updater`）、崩溃与错误上报；
 - 中英双语（当前界面硬编码中文）；
 - 多设备/多轴会话（当前单连接、单 Profile）；
-- 传输层 trait 化，为后续 EtherCAT/Modbus TCP/串口统一接口。
+- 传输层 trait 化：当前串口与 TCP 通过运行时枚举分流，后续可收敛为统一接口。
 
 ## 5. 库选型
 
@@ -185,17 +185,18 @@ cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 ## 8. 已确认与后续
 
 - **Modbus 搜索已确认并落地（2026-10-30）**：只读寄存器扫描 + 自动查找多波特率选择/会话级扩展波特率。实现见 `src/features/modbus/RegisterScanner.vue`、`src-tauri/src/scan.rs`、`src-tauri/src/discovery.rs`、`src-tauri/src/runtime.rs`。
-- 后续候选：站号结果列表/多设备枚举、扫描结果生成 Profile 草稿、FC16/FC23、Modbus TCP、Profile 编辑器（见 4.4）。
-- 本轮未改动 EtherCAT 侧；4.1–4.3 仍按原优先级评估。
+- **连接方式菜单（2026-10-30）**：连接参数卡改为“模拟器 / 串口 / TCP / EtherCAT”四选一分段菜单；TCP 为真实 MBAP 传输，EtherCAT 复用现有 PRE-OP 主站接管流程，参数工作区仍使用 Modbus Profile。实现见 `src-tauri/src/modbus_tcp.rs`、`src/features/ethercat/EthercatConnectCard.vue`。
+- 后续候选：站号结果列表/多设备枚举、扫描结果生成 Profile 草稿、FC16/FC23、Profile 编辑器（见 4.4）。
+- 4.1–4.3 的 EtherCAT 深度能力（诊断/PDO/调谐）仍按原优先级评估，本轮只补了连接入口。
 
 ## 9. 本轮验证（2026-10-30）
 
 - `pnpm lint:tokens`：通过（仅 `styles.css` 存量冻结告警）。
-- `pnpm build`：通过（vue-tsc 0 错误，79 模块）。
-- `pnpm test`：24 项通过（新增自动查找多波特率请求断言）。
-- `cargo test --manifest-path src-tauri/Cargo.toml --lib`：66 项通过，1 项崩溃恢复子进程入口按设置忽略。
+- `pnpm build`：通过（vue-tsc 0 错误，81 模块）。
+- `pnpm test`：25 项通过（新增自动查找多波特率与 Modbus TCP 连接断言）。
+- `cargo test --manifest-path src-tauri/Cargo.toml --lib`：70 项通过，1 项崩溃恢复子进程入口按设置忽略。
 - `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings`：通过。
-- 未做：实机串口上的多波特率查找与寄存器扫描。当前环境没有可确认的目标设备，软件测试与模拟器不等于实机验收；首次实机使用应先断开其他主站/软件，从小区间、低风险站号开始。
+- 未做：实机串口 / Modbus TCP 网关 / EtherCAT 从站上的联调。当前环境没有可确认的目标设备，软件测试与本地 TCP 环回不等于实机验收；首次实机使用应先断开其他主站/软件，从小区间、低风险站号开始。
 
 ## 附录 A：SOEM 能力与暴露对照
 
