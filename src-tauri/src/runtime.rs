@@ -3,6 +3,7 @@ use crate::discovery::{self, DiscoveryControl, DiscoveryStatus};
 use crate::modbus::{
     CommunicationSettings, CommunicationStats, ModbusError, Protocol, SerialClient,
 };
+use crate::modbus_tcp::TcpClient;
 use crate::profile::{
     decode_value, encode_value, Access, OperationDefinition, OperationSet, ParameterDefinition,
     ParitySetting, ProfileError, RiskLevel, ServoProfile, StatusDefinition,
@@ -11,6 +12,7 @@ use crate::scan::{self, ScanControl, ScanStatus};
 use serde::{Deserialize, Serialize};
 use serialport::{DataBits, Parity, StopBits};
 use std::collections::{HashMap, HashSet};
+use std::net::{TcpStream, ToSocketAddrs};
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
@@ -106,6 +108,7 @@ struct Runtime {
 enum Session {
     Simulator(SimulatorDevice),
     Serial(SerialClient),
+    Tcp(TcpClient),
 }
 
 impl Session {
@@ -113,6 +116,7 @@ impl Session {
         match self {
             Session::Simulator(device) => Ok(device.read_registers(address, count)),
             Session::Serial(client) => Ok(client.read_holding_registers(address, count)?),
+            Session::Tcp(client) => Ok(client.read_holding_registers(address, count)?),
         }
     }
 
@@ -123,6 +127,7 @@ impl Session {
                 Ok(())
             }
             Session::Serial(client) => Ok(client.write_single_register(address, value)?),
+            Session::Tcp(client) => Ok(client.write_single_register(address, value)?),
         }
     }
 
@@ -130,6 +135,7 @@ impl Session {
         match self {
             Session::Simulator(_) => ConnectionMode::Simulator,
             Session::Serial(_) => ConnectionMode::Serial,
+            Session::Tcp(_) => ConnectionMode::Tcp,
         }
     }
 }
@@ -253,6 +259,7 @@ impl SimulatorDevice {
 pub enum ConnectionMode {
     Simulator,
     Serial,
+    Tcp,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -281,11 +288,27 @@ impl ConnectionRequest {
         }
         rates
     }
+    fn validate_tcp_endpoint(&self) -> Result<(), String> {
+        let host = self.host.as_deref().map(str::trim).unwrap_or_default();
+        if host.is_empty() || host.len() > 255 {
+            return Err("Modbus TCP 主机须为 1..255 个字符".into());
+        }
+        if !(1..=65535).contains(&self.port.unwrap_or(0)) {
+            return Err("Modbus TCP 端口须为 1..65535".into());
+        }
+        if !(1..=247).contains(&self.slave_id) {
+            return Err("站号必须为 1..247".into());
+        }
+        Ok(())
+    }
     fn validate(&self, profile: &ServoProfile) -> Result<(), String> {
         let rates = self.allowed_rates(profile);
         self.validate_with_rates(&rates)
     }
     fn validate_with_rates(&self, rates: &[u32]) -> Result<(), String> {
+        if self.mode == ConnectionMode::Tcp {
+            return self.validate_tcp_endpoint();
+        }
         let max = if self.preset == ConnectionPreset::P300 {
             32
         } else {
@@ -315,6 +338,11 @@ pub struct ConnectionRequest {
     pub preset: ConnectionPreset,
     pub mode: ConnectionMode,
     pub port_name: Option<String>,
+    /// Modbus TCP endpoint; only used when `mode` is `tcp`.
+    #[serde(default)]
+    pub host: Option<String>,
+    #[serde(default)]
+    pub port: Option<u16>,
     pub slave_id: u8,
     pub baud_rate: u32,
     /// Explicit, session-only opt-in to link rates outside the Profile list.
@@ -483,6 +511,7 @@ where
         let result = operation(&mut runtime);
         let events = match runtime.session.as_mut() {
             Some(Session::Serial(client)) => std::mem::take(&mut client.events),
+            Some(Session::Tcp(client)) => std::mem::take(&mut client.events),
             _ => Vec::new(),
         };
         for (status, detail) in events {
@@ -613,6 +642,19 @@ pub struct RegisterScanRequest {
     include_zero: bool,
 }
 
+enum ScanTransport {
+    Serial(SerialClient),
+    Tcp(TcpClient),
+}
+impl ScanTransport {
+    fn read_transaction(&mut self, address: u16, count: u16) -> Result<Vec<u16>, ModbusError> {
+        match self {
+            Self::Serial(client) => client.read_transaction(address, count),
+            Self::Tcp(client) => client.read_transaction(address, count),
+        }
+    }
+}
+
 #[tauri::command]
 pub fn register_scan_status(state: State<'_, AppState>) -> Result<ScanStatus, String> {
     state
@@ -629,8 +671,8 @@ pub fn cancel_register_scan(state: State<'_, AppState>) {
 }
 
 /// Read-only FC03 scan over an explicit address range. The scan owns a
-/// temporary serial handle and refuses to run while a device session or the
-/// auto-discovery scan owns the port. It never writes to the device.
+/// temporary serial or TCP handle and refuses to run while a device session or
+/// the auto-discovery scan owns the link. It never writes to the device.
 #[tauri::command]
 pub async fn scan_registers(
     request: RegisterScanRequest,
@@ -657,17 +699,8 @@ pub async fn scan_registers(
     let result = tauri::async_runtime::spawn_blocking(move || -> Result<ScanStatus, String> {
         let _lease = scan::ScanLease(control.clone());
         let connection = request.connection;
-        if !matches!(connection.mode, ConnectionMode::Serial) {
-            return Err("寄存器扫描仅适用于真实串口".into());
-        }
         if !(1..=247).contains(&connection.slave_id) {
             return Err("站号必须为 1..247".into());
-        }
-        if !(1200..=1_000_000).contains(&connection.baud_rate) {
-            return Err("波特率须为 1200..1000000".into());
-        }
-        if !matches!(connection.stop_bits, 1 | 2) {
-            return Err("停止位只能为 1 或 2".into());
         }
         if !(100..=10_000).contains(&connection.timeout_ms) {
             return Err("超时须为 100..10000 ms".into());
@@ -680,7 +713,31 @@ pub async fn scan_registers(
             }
             runtime.recorder.clone()
         };
-        let mut client = open_serial_client(&connection, &recorder).map_err(|error| error.to_string())?;
+        let (mut client, endpoint) = match connection.mode {
+            ConnectionMode::Serial => {
+                if !(1200..=1_000_000).contains(&connection.baud_rate) {
+                    return Err("波特率须为 1200..1000000".into());
+                }
+                if !matches!(connection.stop_bits, 1 | 2) {
+                    return Err("停止位只能为 1 或 2".into());
+                }
+                let client = open_serial_client(&connection, &recorder)
+                    .map_err(|error| error.to_string())?;
+                (ScanTransport::Serial(client), format!("port={:?}", connection.port_name))
+            }
+            ConnectionMode::Tcp => {
+                connection.validate_tcp_endpoint()?;
+                let client =
+                    open_tcp_client(&connection, &recorder).map_err(|error| error.to_string())?;
+                (
+                    ScanTransport::Tcp(client),
+                    format!("host={:?} port={:?}", connection.host, connection.port),
+                )
+            }
+            ConnectionMode::Simulator => {
+                return Err("寄存器扫描仅支持真实串口或 Modbus TCP".into());
+            }
+        };
         let status = scan::scan(
             &control,
             request.start_address,
@@ -690,8 +747,7 @@ pub async fn scan_registers(
             |address, count| client.read_transaction(address, count).map_err(|error| error.to_string()),
         )?;
         let detail = format!(
-            "port={:?} slave={} range=0x{:04X}..0x{:04X} block={} values={} failed_blocks={} cancelled={} elapsed_ms={}",
-            connection.port_name,
+            "{endpoint} slave={} range=0x{:04X}..0x{:04X} block={} values={} failed_blocks={} cancelled={} elapsed_ms={}",
             connection.slave_id,
             request.start_address,
             request.end_address,
@@ -808,6 +864,53 @@ fn open_serial_client(
     )
 }
 
+fn open_tcp_client(
+    request: &ConnectionRequest,
+    recorder: &crate::recording::Recorder,
+) -> Result<TcpClient, RuntimeError> {
+    let host = request
+        .host
+        .as_deref()
+        .map(str::trim)
+        .filter(|host| !host.is_empty())
+        .ok_or_else(|| {
+            RuntimeError::Profile(ProfileError::Validation("必须填写 Modbus TCP 主机".into()))
+        })?;
+    let port = request.port.ok_or_else(|| {
+        RuntimeError::Profile(ProfileError::Validation("必须填写 Modbus TCP 端口".into()))
+    })?;
+    let timeout = Duration::from_millis(request.timeout_ms.clamp(100, 10_000));
+    let mut last_error = None;
+    let mut stream = None;
+    for address in (host, port)
+        .to_socket_addrs()
+        .map_err(|error| RuntimeError::Task(format!("无法解析 {host}:{port}：{error}")))?
+    {
+        match TcpStream::connect_timeout(&address, timeout) {
+            Ok(value) => {
+                stream = Some(value);
+                break;
+            }
+            Err(error) => last_error = Some(error),
+        }
+    }
+    let stream = stream.ok_or_else(|| {
+        RuntimeError::Task(format!(
+            "无法连接 {host}:{port}：{}",
+            last_error
+                .map(|error| error.to_string())
+                .unwrap_or_else(|| "地址不可用".into())
+        ))
+    })?;
+    Ok(TcpClient::new(
+        stream,
+        request.slave_id,
+        timeout,
+        format!("tcp:{host}:{port}"),
+        Some(recorder.clone()),
+    ))
+}
+
 #[tauri::command]
 pub async fn connect_device(
     request: ConnectionRequest,
@@ -826,6 +929,7 @@ pub async fn connect_device(
             ConnectionMode::Serial => {
                 Session::Serial(open_serial_client(&request, &runtime.recorder)?)
             }
+            ConnectionMode::Tcp => Session::Tcp(open_tcp_client(&request, &runtime.recorder)?),
         };
         let mode = session.mode();
         runtime
@@ -838,10 +942,17 @@ pub async fn connect_device(
         if let Some(Session::Serial(client)) = runtime.session.as_mut() {
             client.settings = runtime.communication.clone();
         }
+        if let Some(Session::Tcp(client)) = runtime.session.as_mut() {
+            client.settings = runtime.communication.clone();
+        }
+        let endpoint = match mode {
+            ConnectionMode::Tcp => format!(", host={:?}, port={:?}", request.host, request.port),
+            _ => String::new(),
+        };
         runtime.push_audit(
             "connection.open",
             "success",
-            &format!("mode={mode:?}, slave={}", request.slave_id),
+            &format!("mode={mode:?}, slave={}{endpoint}", request.slave_id),
         )?;
         Ok(ConnectionStatus {
             connected: true,
@@ -906,6 +1017,9 @@ pub async fn configure_communication(
         if let Some(Session::Serial(client)) = runtime.session.as_mut() {
             client.settings = settings.clone();
         }
+        if let Some(Session::Tcp(client)) = runtime.session.as_mut() {
+            client.settings = settings.clone();
+        }
         runtime.communication = settings;
         runtime
             .recorder
@@ -922,6 +1036,7 @@ pub async fn get_communication_stats(
     with_runtime(state, |runtime| {
         Ok(match runtime.session.as_ref() {
             Some(Session::Serial(client)) => client.stats.clone(),
+            Some(Session::Tcp(client)) => client.stats.clone(),
             _ => CommunicationStats::default(),
         })
     })
@@ -961,6 +1076,13 @@ pub async fn probe_read(
         let started = std::time::Instant::now();
         let (result, attempts) = match runtime.session.as_mut().ok_or(RuntimeError::NotConnected)? {
             Session::Serial(client) => {
+                let retries = client.stats.retries;
+                let result = client
+                    .read_transaction(address, count)
+                    .map_err(|e| e.to_string());
+                (result, 1 + client.stats.retries - retries)
+            }
+            Session::Tcp(client) => {
                 let retries = client.stats.retries;
                 let result = client
                     .read_transaction(address, count)
@@ -1649,6 +1771,32 @@ mod tests {
         assert!(request.validate(&profile).is_err());
         request.baud_rate = 19200;
         request.stop_bits = 2;
+        assert!(request.validate(&profile).is_err());
+    }
+
+    #[test]
+    fn tcp_endpoint_validation_ignores_serial_fields() {
+        let profile = test_profile();
+        let mut request: ConnectionRequest = serde_json::from_value(serde_json::json!({
+            "mode": "tcp",
+            "host": "127.0.0.1",
+            "port": 502,
+            "slaveId": 1,
+            "baudRate": 9600,
+            "parity": "even",
+            "stopBits": 1,
+            "timeoutMs": 200
+        }))
+        .unwrap();
+        // TCP does not use the Profile baud list or serial framing fields.
+        assert!(request.validate(&profile).is_ok());
+        request.host = Some("  ".into());
+        assert!(request.validate(&profile).is_err());
+        request.host = Some("127.0.0.1".into());
+        request.port = Some(0);
+        assert!(request.validate(&profile).is_err());
+        request.port = Some(502);
+        request.slave_id = 0;
         assert!(request.validate(&profile).is_err());
     }
 

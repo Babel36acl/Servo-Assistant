@@ -5,6 +5,7 @@ mod ethercat;
 mod master;
 mod modbus;
 mod modbus_decode;
+mod modbus_tcp;
 mod network_capture;
 mod pcap_file;
 mod profile;
