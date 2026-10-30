@@ -101,12 +101,17 @@
   --sa-shadow-soft: 0 12px 32px -16px rgba(2, 8, 18, 0.8);
   --sa-shadow-float: 0 20px 60px -12px rgba(2, 8, 18, 0.75);
 
-  /* ---- 动效（三档 + 强 ease-out，玻璃不动大面积动画） ---- */
+  /* ---- 动效（三档 + 强 ease-out，玻璃不动大面积动画） ----
+     Emil 映射：press 100-160 / 下拉 150-250 / 模态抽屉 200-500 / stagger 30-80；
+     命令面板（键盘唤起）保持零动画，不走这三档。 */
   --sa-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --sa-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --sa-ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   --sa-fast: 140ms;
   --sa-base: 180ms;
   --sa-panel: 240ms;
+  --sa-stagger: 50ms;
+  --sa-press: 0.97;
 
   /* ---- 壳尺寸（VSCode 四区 + 命令面板） ---- */
   --sa-titlebar-h: 40px;

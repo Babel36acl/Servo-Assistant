@@ -42,6 +42,9 @@
   --panel-t: var(--sa-panel);
   --ease-out: var(--sa-ease-out);
   --ease-in-out: var(--sa-ease-in-out);
+  --ease-drawer: var(--sa-ease-drawer);
+  --stagger: var(--sa-stagger);
+  --press: var(--sa-press);
 }
 
 body {
