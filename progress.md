@@ -14,5 +14,11 @@
 - P3 分家：`scripts/split-workbench.py` → `features/recording/RecordingSessionView.vue`（录制+浏览，`applyMailboxes` expose）；`features/ethercat/EthercatMasterView.vue`（+activity 带从站数）；`views/CommunicationView.vue` 变两 Tab 编排 + 事件拼接；`RecordingLibrary/History` 搬家
 - 调色板收口：`src/styles/chart-palette.ts` 唯一 JS 色源（CHART/HISTORY），tokens-a.css 镜像 `--sa-chart-*/--sa-hist-*` + `--sa-text-10/11`；lint 扩到 `.ts`；`scopePalette`/`colors`/内联数组三处并入
 - 验证：`lint:tokens` 过（存量仅 styles.css），`vue-tsc` 零错，`node --test` 23/23，`vite build` 66 模块 1.31s
+## 2026-10-30（依赖与协作收尾）
+- 全部依赖升最新：vue 3.5.44 / vite 8.3.5 / plugin-vue 6 / vue-tsc 3.3.13 / tauri 2.12.4 / TS 退 5.9.3（TS 7 与工具链不兼容）；`cargo update`（锁文件跟进）
+- 新工具链兼容修三处：chartSeries 进 computed、confirmField 显式读、调色板标 readonly string[]
+- Dependabot 5 个 open（vite/launch-editor 高危×1 中×3 低×1）随 vite 8.3.5 推送自动关闭，现 10/10 fixed
+- 协作配置：dependabot 周检、PR/Issue 模板、CONTRIBUTING、SECURITY、AGENTS、.editorconfig、CI 加 lint:tokens、README 认领 Babel36acl
+- 本机缺 glib 系统库，`cargo test`/`clippy` 走 CI Windows；两提交已推：`2a95645`（deps）、`2193c2f`（repo）
 - 遗留：styles.css 64 裸字号 + 间距 px（P5 统一收）；`tauri dev` 实机验拖拽/最大化；平板 1024 真机验抽屉 + 44 触控
 - 验证：每阶段 `pnpm build`，P4 起加 `pnpm test` + `cargo test --manifest-path src-tauri/Cargo.toml` + clippy `-D warnings`
