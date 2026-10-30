@@ -18,6 +18,8 @@ JSON Profile 导入
 
 - 导入并校验设备 JSON Profile，不限制参数 ID 命名方式或寄存器地址布局。
 - 支持安全模拟器和真实 Modbus RTU / ASCII 串口连接。
+- 自动查找可多选搜索波特率，并显式允许 Profile 之外的常用波特率（仅本次应用会话，不修改 Profile）。
+- 提供只读保持寄存器扫描：指定站号与地址范围，按 FC03 分块读取，列出非零值并可导出 CSV；扫描期间独占串口，不写入设备。
 - 支持参数读取、单项安全写入、快照导出、差异比较和选择性批量写入。
 - 高风险参数需要输入 `写入 <parameterId>`；所有写入都执行写前值比较和写后回读。
 - Profile 可选择定义应用和持久化命令；未定义时 GUI 不允许执行对应操作。
@@ -80,7 +82,9 @@ scripts\with-msvc.cmd cargo clippy --manifest-path src-tauri/Cargo.toml -- -D wa
 - `examples/servo-profile.example.json`：不对应任何真实设备的格式示例
 - `src-tauri/src/profile.rs`：Profile 反序列化、唯一性、范围和缩放校验
 - `src-tauri/src/modbus.rs`：FC03/FC06、RTU CRC / ASCII LRC、异常响应和帧间隔
-- `src-tauri/src/runtime.rs`：串口独占、模拟器、安全写入和可选设备操作
+- `src-tauri/src/runtime.rs`：串口独占、模拟器、安全写入、自动查找与寄存器扫描命令
+- `src-tauri/src/discovery.rs`：查找候选排序、多波特率校验与串口格式遍历
+- `src-tauri/src/scan.rs`：只读寄存器扫描的分块、取消与结果汇总
 - `src-tauri/src/audit.rs`：SQLite 持久审计与快照存储
 - `src/App.vue`：页面切换、全局状态横幅、确认弹层
 - `src/shell/`：应用壳（自绘拖拽条 / 图标栏 / 窄屏底栏 / 主题与字号偏好）
@@ -88,6 +92,7 @@ scripts\with-msvc.cmd cargo clippy --manifest-path src-tauri/Cargo.toml -- -D wa
 - `src/composables/useServo.ts`：应用状态单例
 - `src/views/`：七个工作区视图（含设置）
 - `src/features/{recording,ethercat}/`：录制解析 / EtherCAT 主站
+- `src/features/modbus/RegisterScanner.vue`：只读寄存器扫描卡片（地址范围 / 进度 / CSV）
 - `src/styles/tokens-a.css`：设计令牌唯一色源（`pnpm lint:tokens` 门禁）
 - `src/styles/ksu.css`：壳与组件的布局/交互样式；`views.css` 只放视图微调
 - [docs/ui.md](docs/ui.md)：界面结构、改动入口与不能破坏的契约
@@ -96,9 +101,13 @@ scripts\with-msvc.cmd cargo clippy --manifest-path src-tauri/Cargo.toml -- -D wa
 
 ### 自动查找
 
-导入对应设备 Profile，选择串口、校验位和停止位，保持断开状态后点击“自动查找”。先尝试当前站号和波特率，再遍历指定的站号范围（默认 1～247）及 Profile 允许的波特率。每个组合只读取一个已定义寄存器，遍历 RTU / ASCII 的 8E1、8N1、8O1，连续两次有效响应后回填站号、波特率及串口格式；点击“连接”后才开始常规读取。
+导入对应设备 Profile，选择串口、校验位和停止位，保持断开状态后点击“自动查找”。先在当前站号上按所选波特率与 RTU / ASCII 的 8E1、8N1、8O1 依次探测，再遍历指定的站号范围（默认 1～247）及所选波特率。搜索波特率可多选；默认来自 Profile，打开“扩展波特率”后可加入常用档位（1200–115200），该选项只影响本次应用会话。每个组合只读取一个已定义寄存器，连续两次有效响应后回填站号、波特率及串口格式；点击“连接”后才开始常规读取。
 
 查找不修改设备配置、不发送广播，支持取消并释放串口。默认探测超时为 200 ms；慢设备可增大到 2000 ms。查找期间不能连接或修改 Profile。未找到不代表设备不存在，还需核对校验位、停止位、Profile 地址和接线。
+
+### 寄存器扫描
+
+“设备与连接”页的寄存器扫描只使用 FC03 读取，不写入设备。地址范围为 0..65535，单次最多 4096 个地址，每块 1～100 个寄存器；失败块计数后继续，取消在当前事务结束后生效，结果可导出 CSV。扫描需要断开设备连接并独占串口，期间的报文仍进入现有录制。未知设备的部分读操作可能有厂商自定义副作用，应先核对手册；扫描结果不代表设备已通过兼容性验收。
 
 ### 便携版与 Linux
 
