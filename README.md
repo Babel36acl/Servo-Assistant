@@ -36,7 +36,7 @@ JSON Profile 导入
 录制绑定当时的设备配置，支持会话名称与备注、文件选择、全会话时间/协议筛选、实时跟随、历史曲线定位事务，以及保留故障前后窗口的一次性触发录制。
 PCAP/PCAPNG 可按文件或分卷目录统一检索；录制与网卡捕获的写入、摘要错误会显示完整性告警。
 支持 PCAP/PCAPNG 导入、EtherCAT 标准 Datagram、邮箱头和显式 PDO 映射解析。
-Windows 主站通过 SOEM/Npcap 提供从站发现、PRE-OP 下的 CoE/SDO 参数配置及最多六通道监控，写入执行确认、写前比较和回读校验。从站诊断提供 AL 状态、活动端口/拓扑、DC 状态和 ESC 0x0300..0x0311 原始错误计数，全部只读。“设备与连接”的连接方式菜单也可直接接管 EtherCAT 网卡；主站状态与通信工作台共享，参数工作区仍使用 Modbus Profile。
+Windows 主站通过 SOEM/Npcap 提供从站发现、PRE-OP 下的 CoE/SDO 参数配置及最多六通道监控，写入执行确认、写前比较和回读校验。从站诊断提供 AL 状态、活动端口/拓扑、DC 状态和 ESC 0x0300..0x0311 原始错误计数；连接后可读取在线对象字典生成 `ethercat-1.0` Profile（只读 SDO Info）。这些操作均不进入 OP。“设备与连接”的连接方式菜单也可直接接管 EtherCAT 网卡；主站状态与通信工作台共享，参数工作区仍使用 Modbus Profile。
 
 Npcap 需单独安装；未安装时仍可使用 Modbus 和离线功能。主站不提供 OP/运动输出。
 详细范围、Profile 契约、录制完整性和设备验收见 [EtherCAT 与录制说明](docs/ethercat-and-recording.md)。

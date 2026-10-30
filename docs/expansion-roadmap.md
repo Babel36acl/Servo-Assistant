@@ -17,10 +17,10 @@
 
 | 模块 | 能力 |
 |---|---|
-| 应用 | Tauri 2 + Vue 3；7 个工作区；52 个 Tauri 命令；FlClash 视觉体系；浅/深色与字号缩放 |
+| 应用 | Tauri 2 + Vue 3；7 个工作区；53 个 Tauri 命令；FlClash 视觉体系；浅/深色与字号缩放 |
 | Modbus | RTU / ASCII / TCP（MBAP）；FC03/FC06；自动查找（站号范围、多选波特率、RTU/ASCII × 8E1/8N1/8O1，可显式扩展 Profile 外波特率）；只读寄存器扫描（FC03，CSV 导出）；分组读取、重试、写前比较、写后回读、批量写、快照导出/比较、SQLite 审计 |
 | 录制 | JSONL 有界队列/分卷/摘要；全会话索引与检索；故障触发录制；PCAP/PCAPNG 导入导出；Modbus 事务与 EtherCAT 帧解析 |
-| EtherCAT | Windows + Npcap；SOEM 1.4.0 静态编译；PRE-OP 下发现从站、CoE SDO 读写、6 通道轮询曲线（300 点）；从站诊断（AL/拓扑/DC/错误计数原始寄存器）；连接页可直接接管主站 |
+| EtherCAT | Windows + Npcap；SOEM 1.4.0 静态编译；PRE-OP 下发现从站、CoE SDO 读写、6 通道轮询曲线（300 点）；从站诊断（AL/拓扑/DC/错误计数原始寄存器）；在线对象字典生成 Profile；连接页可直接接管主站 |
 | 测试 | 前端 `node --test` 25 项；Rust 70 项 + 1 个崩溃恢复子进程入口（忽略） |
 
 ### 2.2 明确边界
@@ -76,12 +76,12 @@
 - 落点：`bridge.c` 的 `sa_slave_diagnostics` 固定宽度结构；`master.rs` 的 `ethercat_diagnostics` 命令；`EthercatMasterView` 诊断卡片。
 - 未做：SII 序列号/站别名、单次广播读 WKC；后续可补。
 
-#### 4.1.2 CoE 对象字典在线发现
+#### 4.1.2 CoE 对象字典在线发现（已落地，2026-10-30）
 
 - 目标：从在线从站读取对象字典，自动生成 `ethercat-1.0` Profile，替代手工维护 `index/subIndex/size/scale`。
-- 做法：`ec_readODlist` → `ec_readODdescription` → `ec_readOEsingle`，分页、限流、可取消；生成对象表供用户确认后保存；读取失败或超时明确报错，不猜测。
-- 落点：`master.rs` 新命令 + `EthercatMasterView` 的“从设备生成 Profile”入口。
-- 验收：对真实从站导出的对象表与厂商 ESI/手册抽样一致；只读；不覆盖用户既有 Profile，除非显式确认。
+- 已实现：`ec_readODlist` → `ec_readODdescription` → `ec_readOE` 读取对象与条目；只纳入 8/16/32/64 位整数对象，跳过浮点/字符串/域/位域；对象访问位 bit1 决定可写；最多 512 个对象，超出部分在界面提示；读取失败的条目计数后继续。
+- 落点：`bridge.c` 的 `sa_od_count`/`sa_od_item`/`sa_od_entries`；`master.rs` 的 `ethercat_discover_profile`；通信工作台“从设备生成”按钮。
+- 边界：只读对象字典，不写 SDO、不进入 OP；不根据厂商名称猜测缩放或语义。
 
 #### 4.1.3 ESI（XML）导入
 
@@ -158,7 +158,7 @@ EtherCrab 的已知边界（第三方评估，0.7.1）：只有 CoE，无 FoE/Eo
 
 | 阶段 | 内容 | 粗略工作量 | 风险 |
 |---|---|---|---|
-| P0 | 从站诊断/拓扑（已完成）；SDO Info 对象字典发现；ESI 导入（后两项只读，未做） | 诊断已完成；其余 2–3 周 | 低 |
+| P0 | 从站诊断/拓扑（已完成）；SDO Info 对象字典发现（已完成）；ESI 导入（未做） | ESI 约 3–5 天 | 低 |
 | P1 | PDO 只读示波器；波形分析/报告；Modbus FC16/FC23、TCP、Profile 编辑器 | 4–8 周 | 中 |
 | P2 | 驱动侧自整定向导；CiA 402 可选；EtherCrab PoC；FoE/EEPROM 维护模式 | 按需 | 高 |
 
@@ -187,15 +187,16 @@ cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 - **Modbus 搜索已确认并落地（2026-10-30）**：只读寄存器扫描 + 自动查找多波特率选择/会话级扩展波特率。实现见 `src/features/modbus/RegisterScanner.vue`、`src-tauri/src/scan.rs`、`src-tauri/src/discovery.rs`、`src-tauri/src/runtime.rs`。
 - **连接方式菜单（2026-10-30）**：连接参数卡改为“模拟器 / 串口 / TCP / EtherCAT”四选一分段菜单；TCP 为真实 MBAP 传输，EtherCAT 复用现有 PRE-OP 主站接管流程，参数工作区仍使用 Modbus Profile。实现见 `src-tauri/src/modbus_tcp.rs`、`src/features/ethercat/EthercatConnectCard.vue`。
 - **P0 诊断已落地（2026-10-30）**：从站 AL 状态/状态码、活动端口、parent/entry 端口、DC active/DCnext、ESC 0x0300..0x0311 原始错误计数；只读 PRE-OP，不动总线。实现见 `bridge.c`、`master.rs`、`EthercatMasterView.vue`。
+- **P0 对象字典已落地（2026-10-30）**：SDO Info 只读读取在线对象字典，生成整数对象 Profile；跳过浮点/字符串/位域，512 对象上限，读取失败与截断在界面提示。实现见 `bridge.c`、`master.rs`、`EthercatMasterView.vue`。
 - 后续候选：站号结果列表/多设备枚举、扫描结果生成 Profile 草稿、FC16/FC23、Profile 编辑器（见 4.4）。
-- P0 剩余：SDO Info 对象字典发现、ESI 导入；P1/P2 的 PDO/调谐仍按原优先级评估。
+- P0 剩余：ESI 导入；P1/P2 的 PDO/调谐仍按原优先级评估。
 
 ## 9. 本轮验证（2026-10-30）
 
 - `pnpm lint:tokens`：通过（仅 `styles.css` 存量冻结告警）。
 - `pnpm build`：通过（vue-tsc 0 错误，81 模块）。
 - `pnpm test`：25 项通过（新增自动查找多波特率与 Modbus TCP 连接断言）。
-- `cargo test --manifest-path src-tauri/Cargo.toml --lib`：70 项通过（含诊断 ABI 布局断言），1 项崩溃恢复子进程入口按设置忽略。
+- `cargo test --manifest-path src-tauri/Cargo.toml --lib`：71 项通过（含诊断/对象字典 ABI 与类型映射断言），1 项崩溃恢复子进程入口按设置忽略。
 - `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings`：通过。
 - 未做：实机串口 / Modbus TCP 网关 / EtherCAT 从站上的联调。当前环境没有可确认的目标设备，软件测试与本地 TCP 环回不等于实机验收；首次实机使用应先断开其他主站/软件，从小区间、低风险站号开始。
 
@@ -204,7 +205,7 @@ cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 | 能力 | API | 当前暴露 | 计划 |
 |---|---|---|---|
 | 从站状态 | `ec_readstate`、`ec_slave[]` | 是 | 已扩展诊断字段 |
-| 对象字典 | `ec_readODlist` 等 | 否 | P0 接出 |
+| 对象字典 | `ec_readODlist` 等 | 是（只读发现） | 已接出 |
 | 过程数据 | `ec_config_map`、`ec_send/receive_processdata` | 否 | P1 接出 |
 | DC | `ec_configdc`、`ec_dcsync0` | 否 | P1 诊断/配置 |
 | EEPROM/SII | `ec_readeeprom`、`ec_writeeeprom`、`ec_sii*` | 否 | 只读先行 |

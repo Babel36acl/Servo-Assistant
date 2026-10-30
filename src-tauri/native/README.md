@@ -49,6 +49,11 @@ DC active/next and the raw ESC error-counter bytes at 0x0300..0x0311 (FPRD read)
 without requesting OP or sending outputs. Error-counter unavailability is reported
 to the UI instead of being fabricated.
 
+`sa_od_count` / `sa_od_item` / `sa_od_entries` read the CoE object dictionary through
+SDO Info only. They never write an SDO; the Rust side maps only 8/16/32/64-bit
+integer entries to the app's Profile contract and skips floats, strings, domains and
+bit-sized entries.
+
 SOEM itself performs protocol-level frame/mailbox retries; the application does not
 repeat a failed SDO write. Hardware timing and device compatibility require testing
 on the intended isolated bus.
