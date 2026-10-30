@@ -72,7 +72,7 @@ onUnmounted(() => { disposed = true; polling.value = false; clearTimeout(timer);
       <tr v-for="o in profile.objects" :key="o.id"><td><input v-model="selection" type="checkbox" :value="o.id" :disabled="!selection.includes(o.id) && selection.length >= 6" /></td><td>{{ o.name }}<br /><code>0x{{ o.index.toString(16) }}:{{ o.subIndex }} · {{ o.id }}</code></td><td>{{ values[o.id]?.raw ?? '未读取 / 已过期' }}<br />{{ values[o.id]?.value ?? '—' }} {{ o.unit }}</td><td><input v-model="drafts[o.id]" :disabled="!o.writable || busy" :aria-label="`${o.name} 待写值`" /><small>{{ o.min }} … {{ o.max }}</small></td><td><button :disabled="busy || !status.connected" @click="action(async () => { await read(o.id); })">读取</button><button v-if="o.writable" :disabled="busy || !status.connected || !values[o.id]" @click="write(o)">写入并回读</button></td></tr>
     </tbody></table></div>
     <label v-if="profile">写入确认 <input v-model="confirmWrite" placeholder="写入 对象ID" :disabled="busy" /></label>
-    <ScopeChart v-if="profile && selection.length" :series="selection.map((id, i) => ({ id, name: profile!.objects.find(o => o.id === id)?.name ?? id, unit: profile!.objects.find(o => o.id === id)?.unit ?? '', color: ['#56d6df','#ffbf69','#66e59f','#ff6b78','#a58cff','#f58bc2'][i], values: history[id] ?? [] }))" />
+    <ScopeChart v-if="profile && selection.length" :series="selection.map((id, i) => ({ id, name: profile!.objects.find(o => o.id === id)?.name ?? id, unit: profile!.objects.find(o => o.id === id)?.unit ?? '', color: ['#eba937','#8ab4f8','#4cc38a','#ef6461','#c792ea','#f28bc1'][i], values: history[id] ?? [] }))" />
     <p>监控是非实时 SDO 轮询；原始整数保留精度，工程值使用浮点显示。不提供 OP、伺服使能或周期运动输出。</p>
   </section>
 </template>

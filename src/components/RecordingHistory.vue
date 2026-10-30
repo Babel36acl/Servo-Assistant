@@ -64,5 +64,5 @@ function advance() { if(!playing.value) return; select(cursor.value); if(cursor.
   </details>
 </template>
 <style scoped>
-.history{padding:14px;border:1px solid var(--line)}summary{cursor:pointer;margin-bottom:12px}.controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.controls select{flex:1 1 260px;min-width:0}.controls label{display:flex;gap:8px;align-items:center}.controls label input{width:130px}input[type=range]{flex:1 1 200px}svg{width:100%;background:#081217;border:1px solid var(--line);margin-top:12px}circle{cursor:pointer}circle:focus{outline:2px solid white}.error{color:var(--red)}.warning{color:var(--amber)}p,span{font-size:12px;color:var(--muted)}
+.history{padding:14px;border:1px solid var(--line)}summary{cursor:pointer;margin-bottom:12px}.controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.controls select{flex:1 1 260px;min-width:0}.controls label{display:flex;gap:8px;align-items:center}.controls label input{width:130px}input[type=range]{flex:1 1 200px}svg{width:100%;background:#101015;border:1px solid var(--line);margin-top:12px}circle{cursor:pointer}circle:focus{outline:2px solid white}.error{color:var(--red)}.warning{color:var(--warning)}p,span{font-size:12px;color:var(--muted)}
 </style>

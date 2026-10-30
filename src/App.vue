@@ -210,7 +210,7 @@ const headlineStatuses = computed(() => {
     return (leftIndex < 0 ? preferred.length : leftIndex) - (rightIndex < 0 ? preferred.length : rightIndex);
   }).slice(0, 6);
 });
-const scopePalette = ["#56d6df", "#ffbf69", "#66e59f", "#ff6b78", "#a58cff", "#f58bc2"];
+const scopePalette = ["#eba937", "#8ab4f8", "#4cc38a", "#ef6461", "#c792ea", "#f28bc1"];
 const scopeSeries = computed<ScopeSeries[]>(() => scopeChannels.value.map((id, index) => {
   const definition = profile.value?.statuses.find((item) => item.id === id);
   return {

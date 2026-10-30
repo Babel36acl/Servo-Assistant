@@ -55,5 +55,5 @@ async function save() {
   </div>
 </template>
 <style scoped>
-.library,.file-browser{display:grid;gap:10px;min-width:0}.controls{display:flex;gap:8px;flex-wrap:wrap}.controls>input,.controls>select{flex:1 1 250px;min-width:0}.file-browser,.session-info{border:1px solid var(--line);padding:12px}.file-browser ul{list-style:none;padding:0;max-height:300px;overflow:auto}.file-browser li>button{width:100%;text-align:left;overflow-wrap:anywhere}textarea{width:100%;margin:10px 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:300px;overflow:auto}.error{color:var(--red)}.warning{color:var(--amber)}summary{cursor:pointer;margin-bottom:10px}
+.library,.file-browser{display:grid;gap:10px;min-width:0}.controls{display:flex;gap:8px;flex-wrap:wrap}.controls>input,.controls>select{flex:1 1 250px;min-width:0}.file-browser,.session-info{border:1px solid var(--line);padding:12px}.file-browser ul{list-style:none;padding:0;max-height:300px;overflow:auto}.file-browser li>button{width:100%;text-align:left;overflow-wrap:anywhere}textarea{width:100%;margin:10px 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:300px;overflow:auto}.error{color:var(--red)}.warning{color:var(--warning)}summary{cursor:pointer;margin-bottom:10px}
 </style>
