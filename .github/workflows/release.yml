@@ -1,32 +1,38 @@
 name: Release
 
+# 只在推送版本标签时构建发布；main 分支不再自动构建。
+# 用法：git tag v0.5.0 && git push origin v0.5.0
 on:
   push:
-    branches: [main]
-  workflow_dispatch:
+    tags:
+      - "v*"
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-main
+  group: release-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   prepare:
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.version.outputs.version }}
-      tag: ${{ steps.version.outputs.tag }}
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-      - name: Select next release version
-        id: version
-        shell: pwsh
-        run: ./scripts/release-version.ps1
+      - name: Validate release tag
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::发布标签必须为 v<主>.<次>.<修订>，当前为 $tag"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
 
   build:
     needs: prepare
@@ -53,6 +59,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
@@ -81,8 +89,8 @@ jobs:
       - name: Verify release version
         shell: pwsh
         run: |
-          if ($env:RELEASE_TAG -notmatch '^v(?<version>[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)$') {
-            throw "标签必须使用 v<SemVer> 格式，当前为 $env:RELEASE_TAG"
+          if ($env:RELEASE_TAG -notmatch '^v(?<version>[0-9]+\.[0-9]+\.[0-9]+)$') {
+            throw "标签必须使用 v<主>.<次>.<修订> 格式，当前为 $env:RELEASE_TAG"
           }
 
           $tagVersion = $Matches['version']
@@ -134,7 +142,7 @@ jobs:
             $files = @(Get-ChildItem "src-tauri/target/release/bundle/$pattern")
             if ($files.Count -ne 1) { throw "预期一个产物：$pattern，实际 $($files.Count)" }
             $suffix = switch ($files[0].Extension) { '.msi' { 'setup.msi' } '.exe' { 'setup.exe' } '.zip' { 'portable.zip' } '.deb' { 'package.deb' } '.rpm' { 'package.rpm' } '.AppImage' { 'portable.AppImage' } }
-            Copy-Item -LiteralPath $files[0].FullName -Destination "release-files/Servo-Assistant_${version}_$($env:PACKAGE_PLATFORM)_x64_$suffix"
+            Copy-Item -LiteralPath $files[0].FullName -Destination "release-files/Servo-Assistant_${version}_$($env.PACKAGE_PLATFORM)_x64_$suffix"
           }
 
       - name: Upload packages
@@ -190,4 +198,4 @@ jobs:
             echo "Release $RELEASE_TAG already exists; preserving published assets."
             exit 0
           fi
-          gh release create "$RELEASE_TAG" release-files/* --target "$GITHUB_SHA" --title "Servo Assistant $RELEASE_TAG" --notes-file docs/release-notes.md
+          gh release create "$RELEASE_TAG" release-files/* --verify-tag --title "Servo Assistant $RELEASE_TAG" --notes-file docs/release-notes.md
