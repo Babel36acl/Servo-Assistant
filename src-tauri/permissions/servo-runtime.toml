@@ -23,6 +23,7 @@ commands.allow = [
   "ethercat_disconnect",
   "ethercat_status",
   "ethercat_diagnostics",
+  "ethercat_discover_profile",
   "ethercat_profile",
   "ethercat_read",
   "ethercat_write",

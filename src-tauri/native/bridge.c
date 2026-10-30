@@ -144,7 +144,64 @@ int sa_slave_diagnostics(uint16_t slave, sa_slave_diag *out) {
                                 out->error_counters, EC_TIMEOUTRXM) > 0 ? 1 : 0;
     return 0;
 }
-int sa_sdo_read(uint16_t slave, uint16_t index, uint8_t sub, unsigned char *out, int *size) {    if (!opened || slave < 1 || slave > ec_slavecount) return -1;
+/* Read-only CoE object dictionary discovery (SDO Info). Static buffers are
+ * serialized by the Rust master mutex; item/entries require a fresh count. */
+typedef struct {
+    uint16_t index, data_type;
+    uint8_t object_code, max_sub;
+    char name[64];
+} sa_od_item_t;
+typedef struct {
+    uint16_t data_type, bit_length, access;
+    uint8_t sub_index;
+    char name[64];
+} sa_od_entry_t;
+static ec_ODlistt od_list;
+static ec_OElistt od_entries;
+int sa_od_count(uint16_t slave) {
+    int wkc;
+    if (!opened || slave < 1 || slave > ec_slavecount) return -1;
+    memset(&od_list, 0, sizeof(od_list));
+    wkc = ec_readODlist(slave, &od_list);
+    if (wkc <= 0) return -2;
+    return (int)od_list.Entries;
+}
+int sa_od_item(uint16_t slave, uint16_t item, sa_od_item_t *out) {
+    int wkc;
+    if (!opened || !out || slave < 1 || slave > ec_slavecount
+        || od_list.Slave != slave || item >= od_list.Entries) return -1;
+    memset(out, 0, sizeof(*out));
+    wkc = ec_readODdescription(item, &od_list);
+    if (wkc <= 0) return -2;
+    out->index = od_list.Index[item];
+    out->data_type = od_list.DataType[item];
+    out->object_code = od_list.ObjectCode[item];
+    out->max_sub = od_list.MaxSub[item];
+    strncpy(out->name, od_list.Name[item], sizeof(out->name) - 1);
+    return 0;
+}
+int sa_od_entries(uint16_t slave, uint16_t item, sa_od_entry_t *out, int capacity) {
+    int wkc;
+    uint16_t i, n;
+    if (!opened || !out || capacity < 1 || slave < 1 || slave > ec_slavecount
+        || od_list.Slave != slave || item >= od_list.Entries) return -1;
+    memset(&od_entries, 0, sizeof(od_entries));
+    wkc = ec_readOE(item, &od_list, &od_entries);
+    if (wkc <= 0) return -2;
+    n = od_entries.Entries;
+    if (n > (uint16_t)capacity) n = (uint16_t)capacity;
+    for (i = 0; i < n; i++) {
+        memset(&out[i], 0, sizeof(out[i]));
+        out[i].sub_index = (uint8_t)i;
+        out[i].data_type = od_entries.DataType[i];
+        out[i].bit_length = od_entries.BitLength[i];
+        out[i].access = od_entries.ObjAccess[i];
+        strncpy(out[i].name, od_entries.Name[i], sizeof(out[i].name) - 1);
+    }
+    return (int)n;
+}
+int sa_sdo_read(uint16_t slave, uint16_t index, uint8_t sub, unsigned char *out, int *size) {
+    if (!opened || slave < 1 || slave > ec_slavecount) return -1;
     return ec_SDOread(slave, index, sub, FALSE, size, out, 500000);
 }
 int sa_sdo_write(uint16_t slave, uint16_t index, uint8_t sub, const unsigned char *data, int size) {

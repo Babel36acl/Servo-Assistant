@@ -225,6 +225,36 @@ export interface SlaveDiagnostics {
   errorCounters: number[];
 }
 
+export interface EthercatObject {
+  id: string;
+  name: string;
+  index: number;
+  subIndex: number;
+  size: number;
+  signed: boolean;
+  writable: boolean;
+  min: string;
+  max: string;
+  scale: number;
+  unit: string;
+}
+
+export interface EthercatProfile {
+  schemaVersion: string;
+  name: string;
+  vendor: number;
+  product: number;
+  objects: EthercatObject[];
+}
+
+export interface EthercatDiscovery {
+  profile: EthercatProfile;
+  total: number;
+  included: number;
+  skipped: number;
+  failed: number;
+}
+
 export interface ScanStatus {
   completed: number;
   total: number;

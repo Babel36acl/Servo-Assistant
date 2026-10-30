@@ -362,6 +362,169 @@ pub async fn ethercat_diagnostics(
     .map_err(|error| error.to_string())?
 }
 
+fn c_name(bytes: &[u8; 64]) -> String {
+    String::from_utf8_lossy(bytes)
+        .trim_end_matches('\0')
+        .trim()
+        .to_string()
+}
+
+fn coe_limits(size: u8, signed: bool) -> (String, String) {
+    if signed {
+        match size {
+            1 => ("-128".into(), "127".into()),
+            2 => ("-32768".into(), "32767".into()),
+            4 => ("-2147483648".into(), "2147483647".into()),
+            _ => ("-9223372036854775808".into(), "9223372036854775807".into()),
+        }
+    } else {
+        match size {
+            1 => ("0".into(), "255".into()),
+            2 => ("0".into(), "65535".into()),
+            4 => ("0".into(), "4294967295".into()),
+            _ => ("0".into(), "18446744073709551615".into()),
+        }
+    }
+}
+
+/// Map one CoE object-dictionary entry to the app's integer object contract.
+/// Floats, strings, domains and bit-sized entries are intentionally skipped.
+fn coe_object(
+    index: u16,
+    sub: u8,
+    name: &str,
+    data_type: u16,
+    bit_length: u16,
+    access: u16,
+) -> Option<Object> {
+    let size = match bit_length {
+        8 => 1,
+        16 => 2,
+        32 => 4,
+        64 => 8,
+        _ => return None,
+    };
+    let signed = match data_type {
+        0x0002 | 0x0003 | 0x0004 | 0x0014 => true,
+        0x0005 | 0x0006 | 0x0007 | 0x0019 => false,
+        _ => return None,
+    };
+    let (min, max) = coe_limits(size, signed);
+    let fallback = format!("对象 {index:04X}:{sub:02X}");
+    Some(Object {
+        id: format!("{index:04X}:{sub:02X}"),
+        name: if name.is_empty() {
+            fallback
+        } else {
+            name.to_string()
+        },
+        index,
+        sub_index: sub,
+        size,
+        signed,
+        writable: access & 0x02 != 0,
+        min,
+        max,
+        scale: 1.0,
+        unit: String::new(),
+    })
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EthercatDiscovery {
+    pub profile: MasterProfile,
+    pub total: usize,
+    pub included: usize,
+    pub skipped: usize,
+    pub failed: usize,
+}
+
+/// Read the live CoE object dictionary through SDO Info and build a Profile.
+/// This is read-only; it never writes an SDO and never requests OP.
+#[tauri::command]
+pub async fn ethercat_discover_profile(
+    slave: u16,
+    state: State<'_, Master>,
+) -> Result<EthercatDiscovery, String> {
+    let master = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let inner = master.inner.lock().map_err(|_| "主站锁损坏")?;
+        if !inner.status.connected {
+            return Err("EtherCAT 尚未连接".into());
+        }
+        let device = inner
+            .status
+            .slaves
+            .iter()
+            .find(|item| item.position == slave)
+            .ok_or("从站不存在")?;
+        if device.mailbox_protocols & 4 == 0 {
+            return Err("从站未声明 CoE，无法读取对象字典".into());
+        }
+        #[cfg(windows)]
+        {
+            let count = native::od_count(slave)?;
+            if count == 0 {
+                return Err("从站返回空对象字典".into());
+            }
+            let mut objects = Vec::new();
+            let mut failed = 0usize;
+            for item in 0..count {
+                let Ok(description) = native::od_item(slave, item as u16) else {
+                    failed += 1;
+                    continue;
+                };
+                let Ok(entries) = native::od_entries(slave, item as u16, 256) else {
+                    failed += 1;
+                    continue;
+                };
+                for entry in entries {
+                    if let Some(object) = coe_object(
+                        description.index,
+                        entry.sub_index,
+                        &c_name(&entry.name),
+                        entry.data_type,
+                        entry.bit_length,
+                        entry.access,
+                    ) {
+                        objects.push(object);
+                    }
+                }
+            }
+            let total = objects.len();
+            objects.truncate(512);
+            let included = objects.len();
+            let skipped = total - included;
+            if included == 0 {
+                return Err("未发现可用的 8/16/32/64 位整数对象".into());
+            }
+            let profile = MasterProfile {
+                schema_version: "ethercat-1.0".into(),
+                name: format!("{}（从设备生成）", device.name),
+                vendor: device.vendor,
+                product: device.product,
+                objects,
+            };
+            profile.validate()?;
+            Ok(EthercatDiscovery {
+                profile,
+                total,
+                included,
+                skipped,
+                failed,
+            })
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = device;
+            Err("主站仅支持 Windows".into())
+        }
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 #[tauri::command]
 pub fn ethercat_profile(
     profile: MasterProfile,
@@ -586,6 +749,24 @@ pub mod native {
         pub al_code: u16,
         pub error_counters: [u8; 18],
     }
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    pub struct NativeOdItem {
+        pub index: u16,
+        pub data_type: u16,
+        pub object_code: u8,
+        pub max_sub: u8,
+        pub name: [u8; 64],
+    }
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    pub struct NativeOdEntry {
+        pub data_type: u16,
+        pub bit_length: u16,
+        pub access: u16,
+        pub sub_index: u8,
+        pub name: [u8; 64],
+    }
     unsafe extern "C" {
         #[cfg(test)]
         pub fn sa_available() -> i32;
@@ -597,6 +778,9 @@ pub mod native {
         pub fn sa_close();
         fn sa_slaves(out: *mut NativeSlave, capacity: i32) -> i32;
         fn sa_slave_diagnostics(slave: u16, out: *mut NativeSlaveDiagnostics) -> i32;
+        fn sa_od_count(slave: u16) -> i32;
+        fn sa_od_item(slave: u16, item: u16, out: *mut NativeOdItem) -> i32;
+        fn sa_od_entries(slave: u16, item: u16, out: *mut NativeOdEntry, capacity: i32) -> i32;
         fn sa_sdo_read(slave: u16, index: u16, sub: u8, out: *mut u8, size: *mut i32) -> i32;
         fn sa_sdo_write(slave: u16, index: u16, sub: u8, data: *const u8, size: i32) -> i32;
         fn sa_error(out: *mut c_char, capacity: i32) -> i32;
@@ -663,6 +847,49 @@ pub mod native {
         }
         Ok(value)
     }
+    pub fn od_count(slave: u16) -> Result<usize, String> {
+        let count = unsafe { sa_od_count(slave) };
+        if count < 0 {
+            return Err("SDO Info 对象字典读取失败；从站可能未声明 CoE".into());
+        }
+        Ok(count as usize)
+    }
+    pub fn od_item(slave: u16, item: u16) -> Result<NativeOdItem, String> {
+        let mut value = NativeOdItem {
+            index: 0,
+            data_type: 0,
+            object_code: 0,
+            max_sub: 0,
+            name: [0; 64],
+        };
+        let result = unsafe { sa_od_item(slave, item, &mut value) };
+        if result < 0 {
+            return Err("对象描述读取失败".into());
+        }
+        Ok(value)
+    }
+    pub fn od_entries(
+        slave: u16,
+        item: u16,
+        capacity: usize,
+    ) -> Result<Vec<NativeOdEntry>, String> {
+        let mut values = vec![
+            NativeOdEntry {
+                data_type: 0,
+                bit_length: 0,
+                access: 0,
+                sub_index: 0,
+                name: [0; 64],
+            };
+            capacity
+        ];
+        let count = unsafe { sa_od_entries(slave, item, values.as_mut_ptr(), capacity as i32) };
+        if count < 0 {
+            return Err("对象条目读取失败".into());
+        }
+        values.truncate(count as usize);
+        Ok(values)
+    }
     pub fn read(slave: u16, index: u16, sub: u8) -> Result<Vec<u8>, String> {
         let _ = error();
         let mut b = vec![0u8; 4096];
@@ -693,6 +920,8 @@ pub mod native {
         fn abi_layout() {
             assert_eq!(std::mem::size_of::<NativeSlave>(), 68);
             assert_eq!(std::mem::size_of::<NativeSlaveDiagnostics>(), 28);
+            assert_eq!(std::mem::size_of::<NativeOdItem>(), 70);
+            assert_eq!(std::mem::size_of::<NativeOdEntry>(), 72);
         }
         #[test]
         fn missing_driver_is_reported_without_loading_failure() {
@@ -718,6 +947,28 @@ mod tests {
             scale: 0.1,
             unit: "".into(),
         }
+    }
+    #[test]
+    fn coe_object_keeps_supported_integers_and_skips_other_types() {
+        let gain = coe_object(0x2000, 0, "Gain", 0x0003, 16, 0x03).unwrap();
+        assert_eq!(gain.id, "2000:00");
+        assert_eq!(gain.name, "Gain");
+        assert_eq!(gain.size, 2);
+        assert!(gain.signed);
+        assert!(gain.writable);
+        assert_eq!((gain.min.as_str(), gain.max.as_str()), ("-32768", "32767"));
+        let counter = coe_object(0x2001, 1, "", 0x0007, 32, 0x01).unwrap();
+        assert_eq!(counter.name, "对象 2001:01");
+        assert_eq!(counter.size, 4);
+        assert!(!counter.signed);
+        assert!(!counter.writable);
+        assert_eq!(counter.max, "4294967295");
+        let big = coe_object(0x2002, 0, "Big", 0x0014, 64, 0x01).unwrap();
+        assert_eq!(big.min, "-9223372036854775808");
+        assert!(coe_object(0x2003, 0, "Float", 0x0008, 32, 0x03).is_none());
+        assert!(coe_object(0x2004, 0, "Text", 0x0009, 0, 0x01).is_none());
+        assert!(coe_object(0x2005, 0, "Bit", 0x0001, 1, 0x01).is_none());
+        assert!(coe_object(0x2006, 0, "Odd", 0x0002, 24, 0x01).is_none());
     }
     #[test]
     fn signed_ranges_and_precision() {

@@ -9,6 +9,7 @@ import type {
   ScanStatus,
   EthercatStatus,
   SlaveDiagnostics,
+  EthercatDiscovery,
   BatchWriteResult,
   ModbusConnectionMode,
   ConnectionStatus,
@@ -83,6 +84,9 @@ export const servoApi = {
   },
   ethercatDiagnostics(slave: number) {
     return invoke<SlaveDiagnostics>("ethercat_diagnostics", { slave });
+  },
+  ethercatDiscoverProfile(slave: number) {
+    return invoke<EthercatDiscovery>("ethercat_discover_profile", { slave });
   },
   disconnect() {
     return invoke<ConnectionStatus>("disconnect_device");

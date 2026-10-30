@@ -3,7 +3,7 @@ import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { CHART_COLORS } from '../../styles/chart-palette';
 import ScopeChart from '../../components/ScopeChart.vue';
-import type { SlaveDiagnostics } from '../../types';
+import type { EthercatDiscovery, SlaveDiagnostics } from '../../types';
 type Adapter = { name: string; description: string };
 type Slave = { position: number; station: number; name: string; vendor: number; product: number; revision: number; state: number; alCode: number; mailboxOut: number; mailboxIn: number };
 type Status = { connected: boolean; adapter: string; slaves: Slave[]; driverDropped: number | null };
@@ -29,6 +29,20 @@ async function refreshAdapters() { await action(async () => { adapters.value = a
 async function connect() { await action(async () => { status.value = await invoke<Status>('ethercat_connect', { adapter: adapter.value, confirmation: confirmation.value }); values.value = {}; history.value = {}; diagnostics.value = null; notice.value = '主站已连接：仅请求 PRE-OP，未发送 PDO 输出。'; }); }
 async function disconnect() { polling.value = false; await action(async () => { await invoke('ethercat_disconnect'); status.value = { connected: false, adapter: '', slaves: [], driverDropped: null }; values.value = {}; history.value = {}; diagnostics.value = null; }); }
 async function importProfile(event: Event) { const file = (event.target as HTMLInputElement).files?.[0]; if (!file) return; await action(async () => { if (file.size > 1024 * 1024) throw new Error('Profile 超过 1 MiB'); const data: unknown = JSON.parse(await file.text()); profile.value = await invoke<Profile>('ethercat_profile', { profile: data }); values.value = {}; drafts.value = {}; selection.value = profile.value.objects.slice(0, 4).map(o => o.id); history.value = {}; }); }
+async function discoverProfile() {
+  await action(async () => {
+    const result = await invoke<EthercatDiscovery>('ethercat_discover_profile', { slave: slave.value });
+    profile.value = await invoke<Profile>('ethercat_profile', { profile: result.profile });
+    values.value = {};
+    drafts.value = {};
+    history.value = {};
+    diagnostics.value = null;
+    selection.value = profile.value.objects.slice(0, 4).map(o => o.id);
+    notice.value = `已从从站 ${slave.value} 生成 Profile：纳入 ${result.included}/${result.total} 个对象`
+      + (result.skipped ? `，${result.skipped} 个超出 512 上限未纳入` : '')
+      + (result.failed ? `，${result.failed} 个对象读取失败` : '');
+  });
+}
 async function read(id: string) { const v = await invoke<Value>('ethercat_read', { slave: slave.value, id }); values.value[id] = v; if (drafts.value[id] === undefined) drafts.value[id] = v.raw; return v; }
 async function write(o: ObjectDef) { await action(async () => {
   const before = values.value[o.id]; if (!before) throw new Error('先读取当前值');
@@ -113,8 +127,10 @@ onUnmounted(() => { disposed = true; polling.value = false; clearTimeout(timer);
             导入 Profile JSON
             <input type="file" hidden accept=".json" :disabled="busy" @change="importProfile" />
           </label>
+          <button class="ksu-btn ksu-btn--primary" :disabled="!status.connected || busy" @click="discoverProfile">从设备生成</button>
         </div>
-        <p class="ksu-hint">{{ profile ? `${profile.objects.length} 个对象 · 厂商 ${profile.vendor} · 产品 ${profile.product}` : '尚未导入配置。导入后可选择从站并读写对象。' }}</p>
+        <p class="ksu-hint">{{ profile ? `${profile.objects.length} 个对象 · 厂商 ${profile.vendor} · 产品 ${profile.product}` : '尚未导入配置。连接主站后可从在线对象字典生成，或导入 JSON。' }}</p>
+        <p class="ksu-hint">当前目标从站 {{ slave }}（在下方对象监控中选择）；生成会替换现有 Profile，只读取对象字典，不写设备。</p>
       </div>
     </section>
 
