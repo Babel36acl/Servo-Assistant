@@ -90,16 +90,23 @@
   background: transparent;
   color: var(--sa-muted);
   font-size: var(--sa-text-13);
+  transition: transform var(--sa-fast) var(--sa-ease-out), background-color var(--sa-fast) var(--sa-ease-out), color var(--sa-fast) var(--sa-ease-out);
 }
 
-.sa-titlebar-winctl button:hover {
-  background: var(--sa-glass-wash);
-  color: var(--sa-ink);
+@media (hover: hover) and (pointer: fine) {
+  .sa-titlebar-winctl button:hover {
+    background: var(--sa-glass-wash);
+    color: var(--sa-ink);
+  }
+
+  .sa-winctl-close:hover {
+    background: var(--sa-danger);
+    color: var(--sa-bg-0);
+  }
 }
 
-.sa-winctl-close:hover {
-  background: var(--sa-danger);
-  color: var(--sa-bg-0);
+.sa-titlebar-winctl button:active {
+  transform: scale(var(--sa-press));
 }
 
 /* ---------- 左侧图标栏 ---------- */
@@ -125,6 +132,7 @@
   background: transparent;
   color: var(--sa-muted);
   font-size: var(--sa-text-12);
+  transition: transform var(--sa-fast) var(--sa-ease-out), background-color var(--sa-fast) var(--sa-ease-out), color var(--sa-fast) var(--sa-ease-out);
 }
 
 .sa-activity button svg {
@@ -137,9 +145,15 @@
   stroke-linejoin: round;
 }
 
-.sa-activity button:hover {
-  color: var(--sa-ink);
-  background: var(--sa-glass-wash);
+@media (hover: hover) and (pointer: fine) {
+  .sa-activity button:hover {
+    color: var(--sa-ink);
+    background: var(--sa-glass-wash);
+  }
+}
+
+.sa-activity button:active {
+  transform: scale(var(--sa-press));
 }
 
 .sa-activity button.active {
