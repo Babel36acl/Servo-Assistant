@@ -1,0 +1,192 @@
+/* 视图专用细节：只补 ksu.css 契约之外的排版微调。
+   本文件归 views-dev，禁止散写色值（hex / rgb / hsl），颜色一律 var(--ksu-*)，字号一律 var(--ksu-fs-*)（跟随字号缩放）。
+   不覆盖核心 ksu-* 类，只做局部组合修正。 */
+
+/* 页头动作区：搜索框固定宽度，避免把状态 pill 挤到第二行 */
+.ksu-page .ksu-page-actions > .ksu-input {
+  width: 15rem;
+  max-width: 100%;
+  flex: 0 1 15rem;
+}
+
+.ksu-page .ksu-page-actions > .ksu-pill {
+  flex: 0 0 auto;
+}
+
+/* 单字段表单组不要拉满整行（如「容量上限」「测试轮数」） */
+.ksu-page .ksu-form-grid > .ksu-field:only-child {
+  max-width: 24rem;
+}
+
+/* 卡内按钮组 / 行内控件：契约只给行控件，卡内横排仍沿用旧业务类名 */
+.ksu-page .button-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ksu-space-2);
+}
+
+.ksu-page .inline-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ksu-space-2);
+  min-width: 0;
+}
+
+.ksu-page .inline-field > .ksu-input,
+.ksu-page .inline-field > .ksu-select {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+/* 行尾编辑控件：参数目标值 / 对象待写值等窄输入 */
+.ksu-page .ksu-row-control > .ksu-input,
+.ksu-page .ksu-row-control > .ksu-select {
+  width: 9rem;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.ksu-page .ksu-row-actions > .ksu-input {
+  width: 8rem;
+  min-width: 0;
+}
+
+/* 参数行 / 对象行里的状态 pill 不挤压标题 */
+.ksu-page .ksu-row-title > .ksu-pill {
+  margin-left: var(--ksu-space-1);
+  vertical-align: middle;
+}
+
+/* 当前选中的数据行（报文选中态） */
+.ksu-page .ksu-row[aria-current='true'] {
+  background: var(--ksu-primary-soft);
+}
+
+/* 等宽数字 / 地址 */
+.ksu-page .mono {
+  font-family: var(--ksu-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 卡内直接挂的横幅（未包卡体）留出卡片水平内边距，避免贴边 */
+.ksu-page .ksu-card > .ksu-banner {
+  margin-left: var(--ksu-card-pad);
+  margin-right: var(--ksu-card-pad);
+  margin-bottom: var(--ksu-card-pad);
+}
+
+/* 连接页：模拟器模式无双列需求，列容器退化为单列堆叠，避免一侧留黑洞 */
+.ksu-page .ksu-columns.is-stack {
+  flex-direction: column;
+}
+
+.ksu-page .ksu-columns.is-stack > .ksu-col,
+.ksu-page .ksu-columns.is-stack > .ksu-col--wide,
+.ksu-page .ksu-columns.is-stack > .ksu-col--narrow {
+  width: 100%;
+  flex-basis: auto;
+}
+
+/* 图表直接嵌在卡体里时抵消卡体水平内边距，保持与卡头对齐 */
+.ksu-page .ksu-card-body > .ksu-chart {
+  margin-left: calc(-1 * var(--ksu-card-pad));
+  margin-right: calc(-1 * var(--ksu-card-pad));
+}
+
+/* 卡内代码 / 报文块：沿用 ksu 卡底色系，不引入新色值 */
+.ksu-page .ksu-card pre {
+  margin: 0;
+  padding: var(--ksu-space-3);
+  border-radius: var(--ksu-radius-8);
+  background: var(--ksu-inset);
+  color: var(--ksu-on-surface);
+  font-family: var(--ksu-font-mono);
+  font-size: var(--ksu-fs-caption);
+  line-height: var(--ksu-leading-normal);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 420px;
+  overflow: auto;
+}
+
+.ksu-page .ksu-card pre.mono {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ScopeChart：单列铺满卡宽，空态提示叠在图表区中央（不占右侧图例列） */
+.ksu-page .ksu-chart .scope-chart {
+  position: relative;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.ksu-page .ksu-chart .scope-chart svg {
+  width: 100%;
+  min-height: 320px;
+}
+
+.ksu-page .ksu-chart .scope-chart .scope-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 24px;
+  background: transparent;
+}
+
+.ksu-page .ksu-chart .scope-chart .scope-legend {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+/* 历史曲线：圆点可点选、轴线与网格走 token */
+.ksu-page .ksu-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 230px;
+}
+
+.ksu-page .ksu-chart svg polyline {
+  fill: none;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.ksu-page .ksu-chart svg circle {
+  cursor: pointer;
+}
+
+.ksu-page .ksu-chart svg circle:focus-visible {
+  outline: 2px solid var(--ksu-primary);
+  outline-offset: 1px;
+}
+
+.ksu-page .ksu-chart svg .grid line {
+  stroke: var(--ksu-divider);
+  stroke-width: 1;
+}
+
+.ksu-page .ksu-chart svg text {
+  fill: var(--ksu-on-surface-variant);
+  font-size: var(--ksu-fs-caption);
+}
+
+/* 详情折叠块：summary 使用 ksu-field-label 语义 */
+.ksu-page details.ksu-field > summary {
+  cursor: pointer;
+  list-style-position: inside;
+  margin-bottom: var(--ksu-space-2);
+}
+
+.ksu-page details.ksu-field > summary::marker {
+  color: var(--ksu-on-surface-variant);
+}
+
+/* 回执 / 路径允许任意换行 */
+.ksu-page .ksu-hint {
+  overflow-wrap: anywhere;
+}

@@ -32,38 +32,28 @@ function forwardMapping(value: MailboxMap): void {
 </script>
 
 <template>
-  <div class="comm-tabs" role="tablist" aria-label="通信工作台">
-    <button
-      type="button" role="tab" :aria-selected="tab === 'recording'"
-      :class="{ active: tab === 'recording' }" @click="tab = 'recording'"
-    >录制与解析</button>
-    <button
-      type="button" role="tab" :aria-selected="tab === 'ethercat'"
-      :class="{ active: tab === 'ethercat' }" @click="tab = 'ethercat'"
-    >EtherCAT 主站</button>
-  </div>
-  <RecordingSessionView v-show="tab === 'recording'" ref="recRef" @activity="onRecActivity" />
-  <EthercatMasterView v-show="tab === 'ethercat'" @activity="onEthActivity" @mapping="forwardMapping" />
-</template>
+  <div class="ksu-page">
+    <header class="ksu-page-head">
+      <div>
+        <h1 class="ksu-page-title">通信工作台</h1>
+        <p class="ksu-page-sub">统一录制 · 事务解析 · 主站配置</p>
+      </div>
+    </header>
 
-<style scoped>
-.comm-tabs {
-  display: flex;
-  gap: var(--sa-space-2);
-  margin-bottom: var(--sa-space-3);
-}
-.comm-tabs button {
-  min-height: var(--sa-touch-min);
-  padding: 0 var(--sa-space-4);
-  border: 1px solid var(--sa-line);
-  border-radius: var(--sa-radius-pill);
-  background: transparent;
-  color: var(--sa-muted);
-  font-size: var(--sa-text-13);
-}
-.comm-tabs button.active {
-  color: var(--sa-accent-ink);
-  background: var(--sa-accent);
-  border-color: transparent;
-}
-</style>
+    <div class="ksu-page-body">
+      <nav class="ksu-tabs" role="tablist" aria-label="通信工作台">
+        <button
+          type="button" role="tab" class="ksu-tab" :class="{ active: tab === 'recording' }"
+          :aria-selected="tab === 'recording'" @click="tab = 'recording'"
+        >录制与解析</button>
+        <button
+          type="button" role="tab" class="ksu-tab" :class="{ active: tab === 'ethercat' }"
+          :aria-selected="tab === 'ethercat'" @click="tab = 'ethercat'"
+        >EtherCAT 主站</button>
+      </nav>
+      <RecordingSessionView v-show="tab === 'recording'" ref="recRef" @activity="onRecActivity" />
+      <EthercatMasterView v-show="tab === 'ethercat'" @activity="onEthActivity" @mapping="forwardMapping" />
+    </div>
+    <div class="ksu-page-bottom" aria-hidden="true"></div>
+  </div>
+</template>

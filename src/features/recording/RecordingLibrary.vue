@@ -12,7 +12,7 @@ async function refreshCatalog() {
   try { catalog.value = await Promise.all(props.sessions.map(path => invoke<Info>('recording_info', { path }).catch(e => ({ path, annotation: { name: '', notes: '' }, bytes: 0, metadata: null, warning: String(e) })))); }
   catch(e) { error.value = String(e); }
 }
-watch(() => props.sessions.join('\n'), refreshCatalog, { immediate: true });
+watch(() => props.sessions.join('\\n'), refreshCatalog, { immediate: true });
 async function refreshInfo() {
   await refreshCatalog();
   if(info.value) { const latest=catalog.value.find(s=>s.path===info.value?.path); if(latest) info.value={...info.value,bytes:latest.bytes,warning:latest.warning}; }
@@ -38,22 +38,92 @@ async function save() {
 }
 </script>
 <template>
-  <div class="library">
-    <div class="controls"><select aria-label="历史录制会话" :value="fileMode ? '' : path" @change="choose(($event.target as HTMLSelectElement).value,false)"><option value="">选择历史会话</option><option v-for="s in catalog" :key="s.path" :value="s.path">{{ s.annotation.name || s.path.split(/[\\/]/).pop() }} · {{ (s.bytes / 1048576).toFixed(1) }} MiB{{ s.warning ? ' · 待检查' : '' }}</option></select><button @click="browse()">浏览文件与会话目录</button><button @click="refreshInfo">刷新会话信息</button></div>
-    <p v-if="error" class="error" role="alert">{{ error }}</p>
-    <section v-if="chooser" class="file-browser" aria-label="录制文件选择器">
-      <div class="controls"><input v-model="location" aria-label="浏览目录路径" @keydown.enter="browse(location)" /><button :disabled="loading" @click="browse(location)">前往</button><button :disabled="loading || !directory?.parent" @click="browse(directory!.parent!)">上一级</button><button @click="chooser = false">关闭</button></div>
-      <div class="controls"><button :disabled="loading || !directory" @click="choose(directory!.path,false)">打开此录制会话</button><button :disabled="loading || !directory" @click="choose(directory!.path,true)">检索此目录全部 PCAP 分卷</button></div>
-      <p v-if="loading">正在读取目录…</p><ul v-else><li v-for="entry in directory?.entries" :key="entry.path"><button @click="entry.directory ? browse(entry.path) : choose(entry.path,true)">{{ entry.directory ? '▸' : '▤' }} {{ entry.name }}</button></li></ul>
-    </section>
-    <details v-if="info" class="session-info"><summary>会话信息与备注 · {{ (info.bytes / 1048576).toFixed(2) }} MiB</summary>
-      <div class="controls"><input v-model="info.annotation.name" maxlength="100" placeholder="会话名称，如：2 号轴间歇超时" aria-label="会话名称" /><button :disabled="saving" @click="save">{{ saving ? '保存中…' : '保存名称与备注' }}</button></div>
-      <textarea v-model="info.annotation.notes" maxlength="4000" rows="3" placeholder="现场现象、操作条件、关键时间点" aria-label="会话备注" />
-      <p v-if="info.warning" class="warning">{{ info.warning }}</p>
-      <details><summary>录制开始时的设备配置与触发设置</summary><pre>{{ JSON.stringify(info.metadata,null,2) }}</pre></details>
+  <div class="ksu-field">
+    <span class="ksu-field-label">历史录制会话</span>
+    <div class="inline-field">
+      <select class="ksu-select" aria-label="历史录制会话" :value="fileMode ? '' : path" @change="choose(($event.target as HTMLSelectElement).value,false)">
+        <option value="">选择历史会话</option>
+        <option v-for="s in catalog" :key="s.path" :value="s.path">{{ s.annotation.name || s.path.split(/[\\\\/]/).pop() }} · {{ (s.bytes / 1048576).toFixed(1) }} MiB{{ s.warning ? ' · 待检查' : '' }}</option>
+      </select>
+      <button class="ksu-btn ksu-btn--sm" @click="browse()">浏览文件与会话目录</button>
+      <button class="ksu-btn ksu-btn--sm" @click="refreshInfo">刷新会话信息</button>
+    </div>
+  </div>
+
+  <div v-if="error" class="ksu-banner ksu-banner--error" role="alert">
+    <div class="ksu-banner-body"><strong>会话读取失败</strong><span>{{ error }}</span></div>
+  </div>
+
+  <div class="ksu-divider" aria-hidden="true"></div>
+
+  <div v-if="chooser" class="ksu-list" aria-label="录制文件选择器">
+    <div class="ksu-row ksu-row--static">
+      <div class="ksu-row-body">
+        <span class="ksu-row-title">文件与会话目录</span>
+        <span class="ksu-row-sub">{{ directory?.path || '正在读取目录…' }}</span>
+      </div>
+      <div class="ksu-row-control">
+        <button class="ksu-btn ksu-btn--sm" @click="chooser = false">关闭</button>
+      </div>
+    </div>
+    <div class="ksu-row ksu-row--static">
+      <div class="ksu-row-body">
+        <div class="inline-field">
+          <input class="ksu-input" v-model="location" aria-label="浏览目录路径" @keydown.enter="browse(location)" />
+          <button class="ksu-btn ksu-btn--sm" :disabled="loading" @click="browse(location)">前往</button>
+          <button class="ksu-btn ksu-btn--sm" :disabled="loading || !directory?.parent" @click="browse(directory!.parent!)">上一级</button>
+        </div>
+        <div class="button-row">
+          <button class="ksu-btn ksu-btn--sm ksu-btn--tonal" :disabled="loading || !directory" @click="choose(directory!.path,false)">打开此录制会话</button>
+          <button class="ksu-btn ksu-btn--sm" :disabled="loading || !directory" @click="choose(directory!.path,true)">检索此目录全部 PCAP 分卷</button>
+        </div>
+      </div>
+    </div>
+    <div v-if="loading" class="ksu-empty">正在读取目录…</div>
+    <template v-else>
+      <button
+        v-for="entry in directory?.entries" :key="entry.path" type="button" class="ksu-row"
+        @click="entry.directory ? browse(entry.path) : choose(entry.path,true)"
+      >
+        <span class="ksu-row-icon" aria-hidden="true">{{ entry.directory ? '▸' : '▤' }}</span>
+        <div class="ksu-row-body">
+          <span class="ksu-row-title">{{ entry.name }}</span>
+          <span class="ksu-row-sub">{{ entry.directory ? '目录' : 'PCAP / 录制文件' }}</span>
+        </div>
+        <span class="ksu-row-chevron" aria-hidden="true">›</span>
+      </button>
+    </template>
+  </div>
+
+  <div class="ksu-divider" aria-hidden="true"></div>
+
+  <div v-if="info" class="ksu-list">
+    <div class="ksu-row ksu-row--static">
+      <div class="ksu-row-body">
+        <span class="ksu-row-title">会话信息与备注</span>
+        <span class="ksu-row-sub">{{ (info.bytes / 1048576).toFixed(2) }} MiB · 用于现场现象与本轮操作条件回溯</span>
+      </div>
+    </div>
+  </div>
+  <div v-if="info" class="ksu-card-body">
+    <div class="ksu-form-grid">
+      <label class="ksu-field">
+        <span class="ksu-field-label">会话名称</span>
+        <input class="ksu-input" v-model="info.annotation.name" maxlength="100" placeholder="会话名称，如：2 号轴间歇超时" aria-label="会话名称" />
+      </label>
+      <div class="ksu-field">
+        <span class="ksu-field-label">保存</span>
+        <button class="ksu-btn ksu-btn--tonal" :disabled="saving" @click="save">{{ saving ? '保存中…' : '保存名称与备注' }}</button>
+      </div>
+    </div>
+    <label class="ksu-field">
+      <span class="ksu-field-label">会话备注</span>
+      <textarea class="ksu-textarea" v-model="info.annotation.notes" maxlength="4000" rows="3" placeholder="现场现象、操作条件、关键时间点" aria-label="会话备注" />
+    </label>
+    <div v-if="info.warning" class="ksu-banner ksu-banner--info"><div class="ksu-banner-body"><span>{{ info.warning }}</span></div></div>
+    <details class="ksu-field">
+      <summary class="ksu-field-label">录制开始时的设备配置与触发设置</summary>
+      <pre class="mono">{{ JSON.stringify(info.metadata,null,2) }}</pre>
     </details>
   </div>
 </template>
-<style scoped>
-.library,.file-browser{display:grid;gap:10px;min-width:0}.controls{display:flex;gap:8px;flex-wrap:wrap}.controls>input,.controls>select{flex:1 1 250px;min-width:0}.file-browser,.session-info{border:1px solid var(--line);padding:12px}.file-browser ul{list-style:none;padding:0;max-height:300px;overflow:auto}.file-browser li>button{width:100%;text-align:left;overflow-wrap:anywhere}textarea{width:100%;margin:10px 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:300px;overflow:auto}.error{color:var(--red)}.warning{color:var(--warning)}summary{cursor:pointer;margin-bottom:10px}
-</style>

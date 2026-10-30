@@ -47,50 +47,180 @@ async function tick() {
 onMounted(async () => { try { status.value = await invoke<Status>('ethercat_status', { refresh: false }); } catch (e) { error.value = String(e); } void tick(); });
 onUnmounted(() => { disposed = true; polling.value = false; clearTimeout(timer); });
 </script>
-
 <template>
-  <section class="ec-master">
-    <h2>EtherCAT 主站 · 配置与监控</h2>
-    <p>连接会接管所选网卡上的 EtherCAT 总线并初始化从站。请先停用其他主站；当前仅支持 PRE-OP 下的 CoE/SDO 配置与轮询。</p>
-    <div class="controls">
-      <button :disabled="busy" @click="refreshAdapters">刷新网卡</button>
-      <select aria-label="EtherCAT 专用网卡" v-model="adapter" :disabled="status.connected || busy"><option value="">选择专用网卡</option><option v-for="a in adapters" :key="a.name" :value="a.name">{{ a.description }}</option></select>
-      <input v-model="confirmation" :disabled="status.connected || busy" placeholder="输入：接管 EtherCAT 总线" aria-label="主站接管确认" />
-      <button :disabled="busy || status.connected || !adapter" @click="connect">连接并发现从站</button>
-      <button :disabled="busy || !status.connected" @click="disconnect">断开主站</button>
-    </div>
-    <div class="controls">
-      <label>EtherCAT Profile <input type="file" accept=".json" :disabled="busy" @change="importProfile" /></label>
-      <span>{{ profile?.name ?? '未导入配置' }}</span>
-      <button :disabled="busy || !status.connected" @click="action(async () => { status = await invoke<Status>('ethercat_status', { refresh: true }); })">刷新从站状态</button>
-      <button :disabled="!status.slaves.length" @click="useMailboxes">将从站邮箱地址用于解析</button>
-    </div>
-    <p v-if="error" class="error" role="alert">{{ error }}</p><p v-if="notice">{{ notice }}</p>
-    <p>主站：{{ status.connected ? '已连接' : '未连接' }} · 驱动丢包：{{ status.driverDropped ?? '未知' }}</p>
-    <div v-if="status.slaves.length" class="ec-table"><table><thead><tr><th>从站</th><th>名称</th><th>Vendor / Product / Revision</th><th>状态</th><th>AL 状态码</th></tr></thead><tbody>
-      <tr v-for="s in status.slaves" :key="s.position"><td>{{ s.position }} / 0x{{ s.station.toString(16) }}</td><td>{{ s.name }}</td><td>{{ s.vendor }} / {{ s.product }} / {{ s.revision }}</td><td>{{ stateName(s.state) }}</td><td>0x{{ s.alCode.toString(16) }}</td></tr>
-    </tbody></table></div>
-    <div v-if="profile" class="controls">
-      <label>目标从站 <select v-model.number="slave" :disabled="busy" @change="selectSlave"><option v-for="s in status.slaves" :key="s.position" :value="s.position">{{ s.position }} · {{ s.name }}</option></select></label>
-      <label><input v-model="polling" type="checkbox" :disabled="!status.connected" />监控所选对象（最多 6 个）</label>
-      <label>读取完成后等待 <input v-model.number="interval" type="number" min="100" max="60000" /> ms</label>
-    </div>
-    <div v-if="profile" class="ec-table"><table><thead><tr><th>监控</th><th>对象</th><th>原始值 / 工程值</th><th>待写原始整数</th><th>操作</th></tr></thead><tbody>
-      <tr v-for="o in profile.objects" :key="o.id"><td><input v-model="selection" type="checkbox" :value="o.id" :disabled="!selection.includes(o.id) && selection.length >= 6" /></td><td>{{ o.name }}<br /><code>0x{{ o.index.toString(16) }}:{{ o.subIndex }} · {{ o.id }}</code></td><td>{{ values[o.id]?.raw ?? '未读取 / 已过期' }}<br />{{ values[o.id]?.value ?? '—' }} {{ o.unit }}</td><td><input v-model="drafts[o.id]" :disabled="!o.writable || busy" :aria-label="`${o.name} 待写值`" /><small>{{ o.min }} … {{ o.max }}</small></td><td><button :disabled="busy || !status.connected" @click="action(async () => { await read(o.id); })">读取</button><button v-if="o.writable" :disabled="busy || !status.connected || !values[o.id]" @click="write(o)">写入并回读</button></td></tr>
-    </tbody></table></div>
-    <label v-if="profile">写入确认 <input v-model="confirmWrite" placeholder="写入 对象ID" :disabled="busy" /></label>
-    <ScopeChart v-if="profile && selection.length" :series="chartSeries" />
-    <p>监控是非实时 SDO 轮询；原始整数保留精度，工程值使用浮点显示。不提供 OP、伺服使能或周期运动输出。</p>
-  </section>
-</template>
-<style scoped>
-label{display:inline-flex;flex-direction:row;align-items:center;gap:6px}input[type=checkbox]{width:16px;height:16px;min-height:16px;margin:0}input[type=file]{max-width:260px;height:auto}
-.ec-master{display:grid;gap:12px}.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center}p,small{font-size:var(--sa-text-12);color:var(--muted)}.error{color:var(--red)}table{width:100%;border-collapse:collapse}td,th{padding:8px;text-align:left;border-bottom:1px solid var(--line);font-size:var(--sa-text-12)}select{max-width:440px}input[type=number]{width:100px}td input{width:140px}td input[type=checkbox]{width:auto}small{display:block}
+  <div class="ksu-grid">
+    <section class="ksu-card ksu-span-2">
+      <div class="ksu-card-head">
+        <div>
+          <h2 class="ksu-card-title">EtherCAT 主站</h2>
+          <p class="ksu-card-sub">连接会接管所选网卡上的总线并初始化从站；当前仅支持 PRE-OP 下的 CoE/SDO 配置与轮询</p>
+        </div>
+        <div class="ksu-card-actions">
+          <span class="ksu-pill" :class="status.connected ? 'ksu-pill--ok' : 'ksu-pill--muted'">{{ status.connected ? '已连接' : '未连接' }}</span>
+        </div>
+      </div>
+      <div class="ksu-card-body">
+        <div class="ksu-form-grid">
+          <label class="ksu-field">
+            <span class="ksu-field-label">专用网卡</span>
+            <div class="inline-field">
+              <select class="ksu-select" aria-label="EtherCAT 专用网卡" v-model="adapter" :disabled="status.connected || busy">
+                <option value="">选择专用网卡</option>
+                <option v-for="a in adapters" :key="a.name" :value="a.name">{{ a.description }}</option>
+              </select>
+              <button class="ksu-btn ksu-btn--sm" :disabled="busy" @click="refreshAdapters">刷新网卡</button>
+            </div>
+          </label>
+          <label class="ksu-field">
+            <span class="ksu-field-label">接管确认</span>
+            <input class="ksu-input" v-model="confirmation" :disabled="status.connected || busy" placeholder="输入：接管 EtherCAT 总线" aria-label="主站接管确认" />
+          </label>
+        </div>
 
-.ec-master { min-width: 0; }
-.ec-table { min-width: 0; overflow: auto; }
-.ec-table table { min-width: 680px; }
-.controls > select, .controls > input { flex: 1 1 240px; width: auto; min-width: 0; }
-.controls > button { flex-shrink: 0; }
-.controls > label { flex-wrap: wrap; }
-</style>
+        <div v-if="error" class="ksu-banner ksu-banner--error" role="alert">
+          <div class="ksu-banner-body"><strong>主站操作失败</strong><span>{{ error }}</span></div>
+        </div>
+        <div v-if="notice" class="ksu-banner ksu-banner--info" role="status">
+          <div class="ksu-banner-body"><span>{{ notice }}</span></div>
+        </div>
+
+        <button v-if="!status.connected" class="ksu-btn ksu-btn--primary ksu-btn--block" :disabled="busy || !adapter" @click="connect">连接并发现从站</button>
+        <button v-else class="ksu-btn ksu-btn--danger ksu-btn--block" :disabled="busy" @click="disconnect">断开主站</button>
+
+        <p class="ksu-hint">主站：{{ status.connected ? '已连接' : '未连接' }} · 驱动丢包：{{ status.driverDropped ?? '未知' }} · 不提供 OP、伺服使能或周期运动输出。</p>
+      </div>
+    </section>
+
+    <section class="ksu-card">
+      <div class="ksu-card-head">
+        <div>
+          <h2 class="ksu-card-title">EtherCAT Profile</h2>
+          <p class="ksu-card-sub">导入对象字典后启用对象读写与监控；Profile 超过 1 MiB 会被拒绝</p>
+        </div>
+        <div class="ksu-card-actions">
+          <span class="ksu-pill" :class="profile ? 'ksu-pill--ok' : 'ksu-pill--muted'">{{ profile?.name ?? '未导入' }}</span>
+        </div>
+      </div>
+      <div class="ksu-card-body">
+        <div class="button-row">
+          <label class="ksu-btn ksu-btn--tonal" :class="{ disabled: busy }">
+            导入 Profile JSON
+            <input type="file" hidden accept=".json" :disabled="busy" @change="importProfile" />
+          </label>
+        </div>
+        <p class="ksu-hint">{{ profile ? `${profile.objects.length} 个对象 · 厂商 ${profile.vendor} · 产品 ${profile.product}` : '尚未导入配置。导入后可选择从站并读写对象。' }}</p>
+      </div>
+    </section>
+
+    <section v-if="status.slaves.length" class="ksu-card ksu-span-full">
+      <div class="ksu-card-head">
+        <div>
+          <h2 class="ksu-card-title">从站列表</h2>
+          <p class="ksu-card-sub">{{ status.slaves.length }} 个从站 · 位置 / 站号 / 厂商信息 / AL 状态</p>
+        </div>
+        <div class="ksu-card-actions">
+          <button class="ksu-btn ksu-btn--sm" :disabled="busy || !status.connected" @click="action(async () => { status = await invoke<Status>('ethercat_status', { refresh: true }); })">刷新从站</button>
+          <button class="ksu-btn ksu-btn--sm" @click="useMailboxes">邮箱地址用于解析</button>
+        </div>
+      </div>
+      <div class="ksu-list">
+        <div v-for="s in status.slaves" :key="s.position" class="ksu-row ksu-row--static">
+          <div class="ksu-row-icon" aria-hidden="true">{{ s.position }}</div>
+          <div class="ksu-row-body">
+            <span class="ksu-row-title">{{ s.name }}</span>
+            <span class="ksu-row-sub">站号 0x{{ s.station.toString(16) }} · Vendor {{ s.vendor }} / Product {{ s.product }} / Revision {{ s.revision }}</span>
+            <span class="ksu-row-sub">AL 状态码 0x{{ s.alCode.toString(16) }}</span>
+          </div>
+          <span class="ksu-pill" :class="s.state & 16 ? 'ksu-pill--bad' : 'ksu-pill--ok'">{{ stateName(s.state) }}</span>
+        </div>
+      </div>
+    </section>
+
+    <section v-if="profile" class="ksu-card ksu-span-full">
+      <div class="ksu-card-head">
+        <div>
+          <h2 class="ksu-card-title">对象监控</h2>
+          <p class="ksu-card-sub">非实时 SDO 轮询，最多 6 个对象；原始整数保留精度，工程值用浮点显示</p>
+        </div>
+        <div class="ksu-card-actions">
+          <span class="ksu-pill" :class="polling ? 'ksu-pill--ok' : 'ksu-pill--muted'">{{ polling ? '监控中' : '已暂停' }}</span>
+        </div>
+      </div>
+      <div class="ksu-card-body">
+        <div class="ksu-form-grid">
+          <label class="ksu-field">
+            <span class="ksu-field-label">目标从站</span>
+            <select class="ksu-select" v-model.number="slave" :disabled="busy" @change="selectSlave">
+              <option v-for="s in status.slaves" :key="s.position" :value="s.position">{{ s.position }} · {{ s.name }}</option>
+            </select>
+          </label>
+          <label class="ksu-field">
+            <span class="ksu-field-label">读取完成后等待 ms</span>
+            <input class="ksu-input" v-model.number="interval" type="number" min="100" max="60000" />
+          </label>
+          <label class="ksu-field">
+            <span class="ksu-field-label">写入确认</span>
+            <input class="ksu-input" v-model="confirmWrite" placeholder="写入 对象ID" :disabled="busy" />
+          </label>
+        </div>
+        <div class="ksu-list">
+          <div class="ksu-row ksu-row--static">
+            <div class="ksu-row-body">
+              <span class="ksu-row-title">监控所选对象</span>
+              <span class="ksu-row-sub">最多 6 个，轮询期间会累积最近 300 点曲线</span>
+            </div>
+            <div class="ksu-row-control">
+              <button type="button" class="ksu-switch" role="switch" :aria-checked="polling" :disabled="!status.connected" aria-label="监控所选对象" @click="polling = !polling">
+                <span class="ksu-switch-knob"></span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section v-if="profile" class="ksu-card ksu-span-full">
+      <div class="ksu-card-head">
+        <div>
+          <h2 class="ksu-card-title">对象表</h2>
+          <p class="ksu-card-sub">{{ profile.objects.length }} 个对象 · 写入后立即回读校验；勾选进入监控</p>
+        </div>
+        <div class="ksu-card-actions">
+          <span class="ksu-pill ksu-pill--muted">{{ selection.length }}/6 监控</span>
+        </div>
+      </div>
+      <div class="ksu-list">
+        <div v-for="o in profile.objects" :key="o.id" class="ksu-row ksu-row--static">
+          <div class="ksu-row-body">
+            <span class="ksu-row-title">
+              {{ o.name }}
+              <span v-if="o.writable" class="ksu-pill ksu-pill--warn">可写</span>
+            </span>
+            <span class="ksu-row-sub mono">0x{{ o.index.toString(16) }}:{{ o.subIndex }} · {{ o.id }} · {{ o.min }} … {{ o.max }} {{ o.unit }}</span>
+            <span class="ksu-row-sub">原始 <b class="mono">{{ values[o.id]?.raw ?? '未读取 / 已过期' }}</b> · 工程 {{ values[o.id]?.value ?? '—' }} {{ o.unit }}</span>
+            <div class="ksu-row-actions">
+              <input class="ksu-input" v-model="drafts[o.id]" :disabled="!o.writable || busy" :aria-label="`${o.name} 待写值`" />
+              <button class="ksu-btn ksu-btn--sm" :disabled="busy || !status.connected" @click="action(async () => { await read(o.id); })">读取</button>
+              <button v-if="o.writable" class="ksu-btn ksu-btn--sm ksu-btn--tonal" :disabled="busy || !status.connected || !values[o.id]" @click="write(o)">写入并回读</button>
+            </div>
+          </div>
+          <div class="ksu-row-control">
+            <input v-model="selection" type="checkbox" :value="o.id" :disabled="!selection.includes(o.id) && selection.length >= 6" :aria-label="`监控 ${o.name}`" />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section v-if="profile && selection.length" class="ksu-card ksu-span-full">
+      <div class="ksu-card-head">
+        <div>
+          <h2 class="ksu-card-title">对象曲线</h2>
+          <p class="ksu-card-sub">所选 {{ selection.length }} 个对象 · 各通道独立缩放 · 最近 300 点</p>
+        </div>
+      </div>
+      <div class="ksu-chart">
+        <ScopeChart :series="chartSeries" />
+      </div>
+    </section>
+  </div>
+</template>

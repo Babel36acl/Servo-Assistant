@@ -1,49 +1,86 @@
 <script setup lang="ts">
+import { onMounted, onUnmounted, ref } from 'vue';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
-const props = defineProps<{ title: string; subtitle?: string }>();
+/** FlClash Windows 顶部拖拽条（36px）：
+ *  - 整条可拖拽（data-tauri-drag-region），双击最大化
+ *  - 右上角窗口按钮 44×36（关闭 hover 变红），不占用标题/设置图标
+ *  - 浏览器预览下 Tauri API 会抛错，统一 try/catch 兜底 */
+const maximized = ref(false);
 
-const flag = window as unknown as Record<string, unknown>;
-const isTauri = 'TauriInternals' in flag || '__TAURI_INTERNALS__' in flag || '__TAURI__' in flag;
-
-async function minWin(): Promise<void> {
+async function minimize(): Promise<void> {
   try {
     await getCurrentWindow().minimize();
   } catch {
-    /* 浏览器预览：没有原生窗口可收 */
+    /* 浏览器预览：无 Tauri 运行时 */
   }
 }
 
-async function maxWin(): Promise<void> {
+async function toggleMaximize(): Promise<void> {
   try {
-    await getCurrentWindow().toggleMaximize();
+    const win = getCurrentWindow();
+    await win.toggleMaximize();
+    maximized.value = await win.isMaximized();
   } catch {
-    /* 浏览器预览：没有原生窗口可切 */
+    /* 浏览器预览：无 Tauri 运行时 */
   }
 }
 
-async function closeWin(): Promise<void> {
+async function closeWindow(): Promise<void> {
   try {
     await getCurrentWindow().close();
   } catch {
-    /* 浏览器预览：没有原生窗口可关 */
+    /* 浏览器预览：无 Tauri 运行时 */
   }
 }
+
+async function syncMaximized(): Promise<void> {
+  try {
+    maximized.value = await getCurrentWindow().isMaximized();
+  } catch {
+    maximized.value = false;
+  }
+}
+
+onMounted(() => {
+  void syncMaximized();
+  window.addEventListener('resize', syncMaximized);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('resize', syncMaximized);
+});
 </script>
 
 <template>
-  <header class="sa-titlebar">
-    <div class="sa-titlebar-drag" data-tauri-drag-region>
-      <span class="sa-titlebar-mark" aria-hidden="true">S<span>∿</span></span>
-      <span class="sa-titlebar-text" data-tauri-drag-region>
-        <strong data-tauri-drag-region>{{ props.title }}</strong>
-        <small v-if="props.subtitle" data-tauri-drag-region>{{ props.subtitle }}</small>
-      </span>
-    </div>
-    <div v-if="isTauri" class="sa-titlebar-winctl">
-      <button type="button" aria-label="最小化" title="最小化" @click="minWin">─</button>
-      <button type="button" aria-label="最大化或还原" title="最大化或还原" @click="maxWin">▢</button>
-      <button type="button" aria-label="关闭" title="关闭" class="sa-winctl-close" @click="closeWin">✕</button>
+  <header class="ksu-titlebar">
+    <div class="ksu-titlebar-drag" data-tauri-drag-region @dblclick="toggleMaximize"></div>
+
+    <div class="ksu-winctl">
+      <button type="button" title="最小化" aria-label="最小化" @click="minimize">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M5 12h14" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        :title="maximized ? '还原' : '最大化'"
+        :aria-label="maximized ? '还原窗口' : '最大化窗口'"
+        @click="toggleMaximize"
+      >
+        <svg v-if="!maximized" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 6h12v12H6z" />
+        </svg>
+        <svg v-else viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M9 9h10v10H9z" />
+          <path d="M5 15V5h10" />
+        </svg>
+      </button>
+      <button type="button" class="ksu-winctl-close" title="关闭" aria-label="关闭窗口" @click="closeWindow">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 6l12 12M18 6 6 18" />
+        </svg>
+      </button>
     </div>
   </header>
 </template>

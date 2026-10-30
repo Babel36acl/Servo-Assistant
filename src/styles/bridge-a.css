@@ -1,5 +1,6 @@
-/* 风格 A 桥接层：把旧页面的变量名整体重指向风格 A。
-   只许出现 var(--sa-*)，不许出现任何色值——门禁同样盯着本文件。 */
+/* 桥接层：把旧页面/旧组件的变量名重指向新 KSU token。
+   只许出现 var(...)，不许出现任何色值——lint:tokens 同样盯着本文件。
+   旧 --sa-* 与 --ksu-* 的对应关系定义在 tokens-a.css（四套色板）。 */
 
 :root {
   --bg: var(--sa-bg-0);
@@ -47,20 +48,26 @@
   --press: var(--sa-press);
 }
 
+/* KSU 没有页面渐变底：整窗由 .ksu-app 的 surface 色承担，body 只负责兜底与高度 */
+html,
+body,
+#app {
+  height: 100%;
+}
+
 body {
-  color: var(--sa-ink);
-  font-family: var(--sa-font);
-  background:
-    linear-gradient(115deg, var(--sa-accent-soft) 0%, transparent 34%),
-    linear-gradient(295deg, var(--sa-glass-wash) 0%, transparent 30%),
-    var(--sa-bg-0);
+  padding: 0;
+  color: var(--ksu-on-bg);
+  font-family: var(--ksu-font);
+  background: var(--ksu-bg);
+  overflow: hidden;
 }
 
 ::selection {
   background: var(--sa-accent-soft);
 }
 
-/* 旧页面的悬浮顶栏/吸顶条沿用玻璃语义，直接吃风格 A 的 blur 定义 */
+/* 旧页面的悬浮顶栏/吸顶条沿用模糊语义，直接吃 token */
 .app-navigation,
 .topbar,
 .parameter-toolbar {
@@ -68,10 +75,9 @@ body {
   backdrop-filter: blur(var(--sa-blur)) saturate(var(--sa-saturate));
 }
 
-/* 平板：所有可点控件不小于 44（与壳内触控保底对齐） */
+/* 平板：可点控件触控保底（checkbox/radio 不放大，交给行点击区） */
 @media (max-width: 1024px) {
   button,
-  input,
   select,
   textarea,
   summary {
@@ -80,6 +86,12 @@ body {
 
   input[type='checkbox'],
   input[type='radio'] {
-    min-width: var(--sa-touch-min);
+    min-height: 0;
   }
+}
+
+/* 旧 Modal / Banner 已由 ksu-sheet / ksu-banner 取代，这里只兜底隐藏遗留结构 */
+.modal-overlay,
+.sa-shell {
+  display: none;
 }

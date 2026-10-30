@@ -1,0 +1,2166 @@
+/* ==========================================================================
+   ksu.css —— FlClash Windows 壳 + 组件样式（唯一布局实现）
+   依据：docs/flclash-win-spec.md（FlClash v0.9.2，数值标注源文件）与本机实拍。
+   色值一律走 tokens-a.css 的 var(--ksu-*)，本文件禁止 hex / rgb / hsl。
+   结构：
+     .ksu-app > .ksu-titlebar(36px 拖拽条 + 右上窗口按钮)
+                + .ksu-body(.ksu-rail 48/220 + .ksu-main 整页滚动)
+                + .ksu-dock（<840 或开启悬浮底栏）
+     页面：.ksu-page > .ksu-page-head(72px 页标题 + 动作区) + .ksu-page-body
+           页面内栅格：.ksu-grid > .ksu-card(.ksu-span-2 / .ksu-span-full)
+   ========================================================================== */
+
+/* ==========================================================================
+   1. 整窗
+   ========================================================================== */
+.ksu-app {
+  display: grid;
+  grid-template-rows: var(--ksu-titlebar-h) minmax(0, 1fr);
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  color: var(--ksu-on-surface);
+  background: var(--ksu-page);
+  font-family: var(--ksu-font);
+  font-size: var(--ksu-fs-body);
+  line-height: var(--ksu-leading-normal);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.ksu-app *,
+.ksu-app *::before,
+.ksu-app *::after {
+  box-sizing: border-box;
+}
+
+/* ==========================================================================
+   2. 顶部 36px 拖拽条 + 窗口按钮（FlClash：无标题、无 appbar）
+   ========================================================================== */
+.ksu-titlebar {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  min-width: 0;
+  height: var(--ksu-titlebar-h);
+  background: var(--ksu-page);
+  color: var(--ksu-on-surface-variant);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.ksu-titlebar-drag {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  min-width: 0;
+  height: 100%;
+  padding: 0 12px;
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.ksu-titlebar-drag * {
+  pointer-events: none;
+}
+
+.ksu-titlebar-mark {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--ksu-radius-8);
+  background: var(--ksu-primary);
+  color: var(--ksu-on-primary);
+  font-size: var(--ksu-fs-caption2);
+  font-weight: var(--ksu-weight-bold);
+  line-height: 1;
+}
+
+.ksu-winctl {
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.ksu-winctl button {
+  display: grid;
+  place-items: center;
+  width: var(--ksu-titlebar-btn-w);
+  min-width: var(--ksu-touch-min);
+  height: var(--ksu-titlebar-h);
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ksu-on-surface-variant);
+  font: inherit;
+  cursor: pointer;
+  transition: background-color var(--ksu-fast) var(--ksu-ease-out),
+    color var(--ksu-fast) var(--ksu-ease-out);
+}
+
+.ksu-winctl button svg,
+.ksu-btn svg,
+.ksu-fab svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ksu-winctl button:hover {
+    background: var(--ksu-block);
+    color: var(--ksu-on-surface);
+  }
+
+  .ksu-winctl-close:hover {
+    background: var(--ksu-error);
+    color: var(--ksu-on-primary);
+  }
+}
+
+.ksu-winctl button:active {
+  background: var(--ksu-press);
+}
+
+/* ==========================================================================
+   3. 主体：侧栏 + 内容区
+   ========================================================================== */
+.ksu-body {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+
+.ksu-main {
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  outline: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ksu-outline) transparent;
+}
+
+.ksu-main::-webkit-scrollbar {
+  width: 10px;
+}
+
+.ksu-main::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: var(--ksu-radius-pill);
+  background: var(--ksu-outline);
+  background-clip: content-box;
+}
+
+/* ==========================================================================
+   4. 左侧导航栏（FlClash NavigationSidebar：48 折叠 / 220 展开）
+   ========================================================================== */
+.ksu-rail {
+  display: none;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: var(--ksu-rail-collapsed-w);
+  padding: var(--ksu-rail-inset) var(--ksu-rail-inset) 8px;
+  background: var(--ksu-chrome);
+  min-height: 0;
+  overflow: hidden;
+  transition: width var(--ksu-panel) var(--ksu-ease);
+}
+
+.ksu-rail.expanded {
+  width: var(--ksu-rail-expanded-w);
+}
+
+.ksu-rail-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--ksu-rail-item);
+  height: var(--ksu-rail-item);
+  min-height: 0;
+  margin: 0 auto var(--ksu-rail-toggle-gap);
+  padding: 0;
+  border: 0;
+  border-radius: var(--ksu-rail-item-radius);
+  background: transparent;
+  color: var(--ksu-on-surface-variant);
+  font: inherit;
+  cursor: pointer;
+  transition: background-color var(--ksu-fast) var(--ksu-ease-out),
+    color var(--ksu-fast) var(--ksu-ease-out);
+}
+
+.ksu-rail.expanded .ksu-rail-toggle {
+  width: 100%;
+  justify-content: flex-start;
+  padding: 0 8px;
+}
+
+.ksu-rail-toggle svg {
+  width: var(--ksu-rail-icon);
+  height: var(--ksu-rail-icon);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ksu-rail-toggle:hover {
+    background: var(--ksu-hover);
+    color: var(--ksu-on-surface);
+  }
+}
+
+.ksu-rail-items {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--ksu-rail-item-gap);
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.ksu-rail-items::-webkit-scrollbar {
+  display: none;
+}
+
+.ksu-rail-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--ksu-rail-item);
+  height: var(--ksu-rail-item);
+  min-height: 0;
+  margin: 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ksu-rail-item-radius);
+  background: transparent;
+  color: var(--ksu-on-surface-variant);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--ksu-fast) var(--ksu-ease-out),
+    color var(--ksu-fast) var(--ksu-ease-out);
+}
+
+/* 展开态：图标 + 文字横排（sidebar.dart _DestinationRow） */
+.ksu-rail.expanded .ksu-rail-item {
+  width: 100%;
+  justify-content: flex-start;
+  gap: var(--ksu-rail-label-gap);
+  padding: 0 8px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ksu-rail-item:hover {
+    background: var(--ksu-block);
+    color: var(--ksu-on-surface);
+  }
+}
+
+.ksu-rail-item.active {
+  background: var(--ksu-block);
+  color: var(--ksu-on-surface);
+}
+
+.ksu-rail-item.active .ksu-rail-icon {
+  color: var(--ksu-primary);
+}
+
+/* 选中指示条：3×16，贴在侧栏内缩处（sidebar.dart:19-20,413） */
+.ksu-rail-item.active::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 50%;
+  width: 3px;
+  height: 16px;
+  transform: translateY(-50%);
+  border-radius: var(--ksu-radius-pill);
+  background: var(--ksu-primary);
+}
+
+.ksu-rail-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: var(--ksu-rail-icon);
+  height: var(--ksu-rail-icon);
+}
+
+.ksu-rail-icon svg {
+  width: var(--ksu-rail-icon);
+  height: var(--ksu-rail-icon);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ksu-rail-label {
+  display: none;
+  min-width: 0;
+  font-size: var(--ksu-fs-subheadline);
+  font-weight: var(--ksu-weight-medium);
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  transition: opacity var(--ksu-fast) var(--ksu-ease-out);
+}
+
+.ksu-rail.expanded .ksu-rail-label {
+  display: block;
+  opacity: 1;
+}
+
+.ksu-rail-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--ksu-radius-pill);
+  background: var(--ksu-primary);
+  color: var(--ksu-on-primary);
+  font-size: var(--ksu-fs-caption2);
+  font-weight: var(--ksu-weight-semibold);
+  line-height: 1;
+}
+
+.ksu-rail.expanded .ksu-rail-badge {
+  position: static;
+  margin-left: auto;
+}
+
+.ksu-rail-foot {
+  flex-shrink: 0;
+  padding: 10px 4px 2px;
+  color: var(--ksu-on-surface-variant);
+  font-size: var(--ksu-rail-foot);
+  line-height: 1.3;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.8;
+}
+
+.ksu-rail.expanded .ksu-rail-foot {
+  text-align: left;
+  padding-left: 8px;
+}
+
+/* ==========================================================================
+   5. 窄屏底栏（<840）与悬浮胶囊坞（floatingDock）
+   ========================================================================== */
+.ksu-dock {
+  display: none;
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--ksu-dock-bottom) + env(safe-area-inset-bottom, 0px));
+  z-index: var(--ksu-z-dock);
+  align-items: center;
+  gap: 2px;
+  height: var(--ksu-dock-h);
+  padding: var(--ksu-dock-pad);
+  transform: translateX(-50%);
+  border-radius: var(--ksu-radius-pill);
+  background: var(--ksu-dock-bg);
+  box-shadow: var(--ksu-shadow-float);
+  max-width: calc(100vw - 2 * var(--ksu-dock-side));
+}
+
+.ksu-dock.is-floating {
+  background: color-mix(in srgb, var(--ksu-dock-bg) 86%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6);
+  backdrop-filter: blur(20px) saturate(1.6);
+  border: 1px solid var(--ksu-divider);
+}
+
+/* 普通底栏：贴底整宽 */
+.ksu-dock.is-bar {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  max-width: none;
+  height: calc(var(--ksu-navbar-h) + env(safe-area-inset-bottom, 0px));
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+  transform: none;
+  justify-content: center;
+  border: 0;
+  border-top: 1px solid var(--ksu-divider);
+  border-radius: 0;
+  background: var(--ksu-chrome);
+  box-shadow: none;
+}
+
+.ksu-dock-item {
+  position: relative;
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  min-width: var(--ksu-dock-tab-min-w);
+  height: calc(var(--ksu-dock-h) - 2 * var(--ksu-dock-pad));
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--ksu-radius-pill);
+  background: transparent;
+  color: var(--ksu-on-surface-variant);
+  font: inherit;
+  cursor: pointer;
+  transition: background-color var(--ksu-fast) var(--ksu-ease-out),
+    color var(--ksu-fast) var(--ksu-ease-out);
+}
+
+.ksu-dock.is-bar .ksu-dock-item {
+  flex: 1 1 0;
+  max-width: 132px;
+  height: 100%;
+  border-radius: var(--ksu-radius-12);
+}
+
+.ksu-dock-item:hover {
+  background: var(--ksu-hover);
+  color: var(--ksu-on-surface);
+}
+
+.ksu-dock-item.active {
+  background: var(--ksu-primary-soft);
+  color: var(--ksu-primary);
+}
+
+.ksu-dock-icon {
+  display: grid;
+  place-items: center;
+}
+
+.ksu-dock-icon svg {
+  width: var(--ksu-dock-icon);
+  height: var(--ksu-dock-icon);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ksu-dock-label {
+  font-size: var(--ksu-dock-label);
+  line-height: var(--ksu-dock-label-leading);
+  white-space: nowrap;
+}
+
+.ksu-dock-badge {
+  position: absolute;
+  top: 2px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: var(--ksu-radius-pill);
+  background: var(--ksu-primary);
+  color: var(--ksu-on-primary);
+  font-size: var(--ksu-fs-caption2);
+  font-weight: var(--ksu-weight-semibold);
+  line-height: 1;
+}
+
+/* ==========================================================================
+   6. 页面骨架（页面标题在内容区顶部，metrics.dart pageToolbarHeight = 72）
+   ========================================================================== */
+.ksu-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ksu-card-gap);
+  min-width: 0;
+  padding: 0 var(--ksu-page-pad-x) var(--ksu-page-pad-bottom);
+}
+
+.ksu-page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  min-width: 0;
+  min-height: var(--ksu-page-toolbar-h);
+  padding: 8px 0 0;
+}
+
+.ksu-page-head > div {
+  min-width: 0;
+}
+
+.ksu-page-title {
+  margin: 0;
+  font-size: var(--ksu-page-title-size);
+  font-weight: var(--ksu-weight-semibold);
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--ksu-on-surface);
+}
+
+.ksu-page-sub {
+  margin: 2px 0 0;
+  font-size: var(--ksu-page-sub-size);
+  line-height: 1.35;
+  color: var(--ksu-on-surface-variant);
+}
+
+.ksu-page-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.ksu-page-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ksu-card-gap);
+  min-width: 0;
+}
+
+.ksu-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ksu-card-gap);
+  min-width: 0;
+}
+
+.ksu-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ksu-space-3);
+  min-width: 0;
+}
+
+/* 卡片栅格：auto-fit 340，跨 2 列在 <860 退化（layout.dart 4/2 列） */
+.ksu-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(var(--ksu-grid-min), 1fr));
+  gap: var(--ksu-grid-gap);
+  align-items: start;
+  min-width: 0;
+}
+
+.ksu-span-2 {
+  grid-column: span 2;
+}
+
+.ksu-span-full {
+  grid-column: 1 / -1;
+}
+
+.ksu-page-bottom {
+  flex-shrink: 0;
+  height: var(--ksu-page-bottom);
+}
+
+/* ==========================================================================
+   7. 卡片（FlClash Card：20 圆角，无边框无阴影，四级表面）
+   ========================================================================== */
+.ksu-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--ksu-card);
+  color: var(--ksu-on-surface);
+  border-radius: var(--ksu-card-radius);
+  overflow: hidden;
+}
+
+.ksu-card--sm {
+  border-radius: var(--ksu-card-radius-sm);
+}
+
+/* flush：卡体不补水平内边距（列表/指标/图表自撑满宽） */
+.ksu-card--flush > .ksu-card-body {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.ksu-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 20px 20px 0;
+}
+
+.ksu-card-head > div {
+  min-width: 0;
+}
+
+.ksu-card-title {
+  margin: 0;
+  font-size: var(--ksu-card-title-size);
+  font-weight: var(--ksu-weight-semibold);
+  line-height: 1.3;
+  /* 卡片头色 = onSurfaceVariant（context.dart:70-72） */
+  color: var(--ksu-on-surface-variant);
+}
+
+.ksu-card-sub {
+  margin: 2px 0 0;
+  font-size: var(--ksu-card-sub-size);
+  line-height: 1.4;
+  color: var(--ksu-on-surface-variant);
+  opacity: 0.85;
+  overflow-wrap: anywhere;
+}
+
+.ksu-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.ksu-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 4px 20px 20px;
+}
+
+/* 卡体内嵌列表：行自带 16dp 内距，抵消卡体 20dp 做成满宽 */
+.ksu-card-body > .ksu-list {
+  margin: 0 calc(-1 * 20px);
+}
+
+.ksu-card > .ksu-list:first-child {
+  padding-top: 8px;
+}
+
+/* ==========================================================================
+   8. 列表行（metrics.dart：最小高 56，上下 10，左右 16）
+   ========================================================================== */
+.ksu-list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ksu-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: var(--ksu-row-h);
+  padding: var(--ksu-row-pad-y) var(--ksu-row-pad-x);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  min-width: 0;
+  transition: background-color var(--ksu-fast) var(--ksu-ease-out);
+}
+
+.ksu-list > .ksu-row + .ksu-row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: var(--ksu-row-pad-x);
+  right: 0;
+  height: 1px;
+  background: var(--ksu-divider);
+}
+
+button.ksu-row,
+label.ksu-row,
+a.ksu-row,
+.ksu-row--clickable {
+  cursor: pointer;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  button.ksu-row:hover,
+  label.ksu-row:hover,
+  a.ksu-row:hover,
+  .ksu-row--clickable:hover {
+    background: var(--ksu-hover);
+  }
+}
+
+button.ksu-row:active,
+label.ksu-row:active,
+a.ksu-row:active {
+  background: var(--ksu-press);
+  transform: none;
+}
+
+.ksu-row--static {
+  cursor: default;
+}
+
+.ksu-row-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: var(--ksu-icon-size);
+  height: var(--ksu-icon-size);
+  color: var(--ksu-on-surface-variant);
+}
+
+.ksu-row-icon svg {
+  width: var(--ksu-icon-size);
+  height: var(--ksu-icon-size);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ksu-row-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ksu-row-title {
+  font-size: var(--ksu-row-title-size);
+  font-weight: var(--ksu-weight-medium);
+  line-height: 1.3;
+  color: var(--ksu-on-surface);
+  overflow-wrap: anywhere;
+}
+
+.ksu-row-sub {
+  font-size: var(--ksu-row-sub-size);
+  line-height: 1.35;
+  color: var(--ksu-on-surface-variant);
+  overflow-wrap: anywhere;
+}
+
+.ksu-row-control {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  max-width: 60%;
+  min-width: 0;
+}
+
+.ksu-row-chevron {
+  flex-shrink: 0;
+  color: var(--ksu-on-surface-variant);
+  font-size: var(--ksu-fs-title3);
+  line-height: 1;
+}
+
+.ksu-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.ksu-row--danger .ksu-row-title,
+.ksu-row--danger .ksu-row-icon,
+.ksu-row--danger .ksu-row-chevron {
+  color: var(--ksu-error);
+}
+
+.ksu-row--danger .ksu-row-sub {
+  color: color-mix(in srgb, var(--ksu-error) 70%, var(--ksu-on-surface-variant));
+}
+
+.ksu-row--active {
+  background: var(--ksu-primary-soft);
+}
+
+/* ==========================================================================
+   9. 大数字 / 指标（FlClash dashboard display 40/44 700）
+   ========================================================================== */
+.ksu-display {
+  font-size: var(--ksu-fs-display);
+  font-weight: var(--ksu-weight-bold);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ksu-on-surface);
+}
+
+.ksu-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ksu-stat-label {
+  font-size: var(--ksu-fs-footnote);
+  line-height: 1.35;
+  color: var(--ksu-on-surface-variant);
+}
+
+.ksu-stat-value {
+  font-size: var(--ksu-fs-display);
+  font-weight: var(--ksu-weight-bold);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ksu-on-surface);
+  overflow-wrap: anywhere;
+}
+
+.ksu-stat-unit {
+  margin-left: 4px;
+  font-size: var(--ksu-fs-subheadline);
+  font-weight: var(--ksu-weight-medium);
+  letter-spacing: 0;
+  color: var(--ksu-on-surface-variant);
+}
+
+.ksu-stat-sub {
+  font-size: var(--ksu-fs-footnote);
+  line-height: 1.35;
+  color: var(--ksu-on-surface-variant);
+}
+
+.ksu-stat--ok .ksu-stat-value {
+  color: var(--ksu-success);
+}
+
+.ksu-stat--warn .ksu-stat-value {
+  color: var(--ksu-warning);
+}
+
+.ksu-stat--bad .ksu-stat-value {
+  color: var(--ksu-error);
+}
+
+/* 旧 metric 类：与 stat 同视觉（现有 views 继续可用） */
+.ksu-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  padding: 4px 20px 20px;
+  min-width: 0;
+}
+
+.ksu-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 16px;
+  border-radius: var(--ksu-radius-16);
+  background: var(--ksu-block);
+}
+
+.ksu-metric-label {
+  font-size: var(--ksu-fs-footnote);
+  line-height: 1.35;
+  color: var(--ksu-on-surface-variant);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ksu-metric-value {
+  font-size: var(--ksu-fs-display);
+  font-weight: var(--ksu-weight-bold);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ksu-on-surface);
+  overflow-wrap: anywhere;
+}
+
+.ksu-metric-unit {
+  font-size: var(--ksu-fs-subheadline);
+  color: var(--ksu-on-surface-variant);
+}
+
+.ksu-metric--ok .ksu-metric-value {
+  color: var(--ksu-success);
+}
+
+.ksu-metric--warn .ksu-metric-value {
+  color: var(--ksu-warning);
+}
+
+.ksu-metric--bad .ksu-metric-value {
+  color: var(--ksu-error);
+}
+
+/* ==========================================================================
+   10. 内嵌块（block 级表面：公告 / 日志 / 分组容器）
+   ========================================================================== */
+.ksu-block {
+  min-width: 0;
+  padding: 12px;
+  border-radius: var(--ksu-radius-12);
+  background: var(--ksu-block);
+  color: var(--ksu-on-surface);
+}
+
+/* ==========================================================================
+   11. 控件：开关 / 滑杆 / 分段 / 下拉 / 按钮 / 输入
+   ========================================================================== */
+/* 开关：M3 52×32，拇指 28，选中带勾 */
+.ksu-switch {
+  position: relative;
+  flex-shrink: 0;
+  width: var(--ksu-switch-w);
+  height: var(--ksu-switch-h);
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ksu-radius-pill);
+  background: var(--ksu-switch-track);
+  cursor: pointer;
+  transition: background-color var(--ksu-base) var(--ksu-ease-out);
+}
+
+.ksu-switch:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ksu-switch[aria-checked='true'] {
+  background: var(--ksu-primary);
+}
+
+.ksu-switch-knob {
+  position: absolute;
+  top: var(--ksu-switch-offset);
+  left: var(--ksu-switch-offset);
+  display: grid;
+  place-items: center;
+  width: var(--ksu-switch-thumb-size);
+  height: var(--ksu-switch-thumb-size);
+  border-radius: 50%;
+  background: var(--ksu-on-surface-variant);
+  transition: transform var(--ksu-base) var(--ksu-ease-out),
+    background-color var(--ksu-base) var(--ksu-ease-out);
+}
+
+.ksu-switch-knob svg {
+  display: none;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: var(--ksu-primary);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ksu-switch[aria-checked='true'] .ksu-switch-knob {
+  transform: translateX(
+    calc(var(--ksu-switch-w) - var(--ksu-switch-thumb-size) - 2 * var(--ksu-switch-offset))
+  );
+  background: var(--ksu-on-primary);
+}
+
+.ksu-switch[aria-checked='true'] .ksu-switch-knob svg {
+  display: block;
+}
+
+/* 滑杆：M3 Expressive 轨道 16，拇指 4×44 */
+.ksu-slider {
+  display: block;
+  width: 100%;
+  height: var(--ksu-touch-min);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+.ksu-slider::-webkit-slider-runnable-track {
+  height: var(--ksu-slider-track-h);
+  border-radius: var(--ksu-radius-pill);
+  background: var(--ksu-slider-track);
+}
+
+.ksu-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 4px;
+  height: 44px;
+  margin-top: calc((var(--ksu-slider-track-h) - 44px) / 2);
+  border-radius: var(--ksu-radius-pill);
+  background: var(--ksu-primary);
+  cursor: pointer;
+}
+
+.ksu-slider:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ksu-slider:focus-visible {
+  outline: 2px solid var(--ksu-primary);
+  outline-offset: 4px;
+  border-radius: var(--ksu-radius-pill);
+}
+
+/* 分段控件：block 容器 pill，选中项 primary 填充（FlClash 出站模式） */
+.ksu-segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  padding: 3px;
+  border-radius: var(--ksu-radius-pill);
+  background: var(--ksu-block);
+  overflow: hidden;
+}
+
+.ksu-segmented-item {
+  flex: 0 0 auto;
+  min-height: calc(var(--ksu-segmented-h) - 6px);
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--ksu-radius-pill);
+  background: transparent;
+  color: var(--ksu-on-surface-variant);
+  font: inherit;
+  font-size: var(--ksu-fs-subheadline);
+  font-weight: var(--ksu-weight-medium);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--ksu-fast) var(--ksu-ease-out),
+    color var(--ksu-fast) var(--ksu-ease-out);
+}
+
+.ksu-segmented-item:hover {
+  color: var(--ksu-on-surface);
+}
+
+.ksu-segmented-item.active {
+  background: var(--ksu-primary);
+  color: var(--ksu-on-primary);
+}
+
+.ksu-segmented-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 下拉 / 输入：inset 底、圆角 12、focus 主色 1.5px 描边 */
+.ksu-select,
+.ksu-input,
+.ksu-textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--ksu-field-h);
+  padding: 0 12px;
+  border: 1.5px solid transparent;
+  border-radius: var(--ksu-radius-12);
+  background: var(--ksu-inset);
+  color: var(--ksu-on-surface);
+  font: inherit;
+  font-size: var(--ksu-fs-body);
+  line-height: 1.4;
+  transition: border-color var(--ksu-fast) var(--ksu-ease-out);
+}
+
+.ksu-select {
+  padding-right: 34px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--ksu-on-surface-variant) 50%),
+    linear-gradient(135deg, var(--ksu-on-surface-variant) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+.ksu-textarea {
+  min-height: 88px;
+  padding: 10px 12px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.ksu-input::placeholder,
+.ksu-textarea::placeholder {
+  color: var(--ksu-on-surface-variant);
+}
+
+.ksu-input:hover,
+.ksu-select:hover,
+.ksu-textarea:hover {
+  border-color: var(--ksu-outline);
+}
+
+.ksu-input:focus,
+.ksu-select:focus,
+.ksu-textarea:focus {
+  outline: none;
+  border-color: var(--ksu-primary);
+}
+
+.ksu-input:disabled,
+.ksu-select:disabled,
+.ksu-textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ksu-select option {
+  background: var(--ksu-card);
+  color: var(--ksu-on-surface);
+}
+
+.ksu-page input[type='checkbox'],
+.ksu-page input[type='radio'] {
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  accent-color: var(--ksu-primary);
+  cursor: pointer;
+}
+
+/* 浮层下拉（预留） */
+.ksu-select-menu {
+  position: absolute;
+  z-index: var(--ksu-z-sheet);
+  min-width: 200px;
+  max-height: 320px;
+  padding: 6px;
+  border: 1px solid var(--ksu-divider);
+  border-radius: var(--ksu-radius-16);
+  background: var(--ksu-card);
+  box-shadow: var(--ksu-shadow-float);
+  overflow-y: auto;
+}
+
+.ksu-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--ksu-touch-min);
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--ksu-radius-10);
+  background: transparent;
+  color: var(--ksu-on-surface);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ksu-option:hover {
+  background: var(--ksu-hover);
+}
+
+.ksu-option.active {
+  background: var(--ksu-primary-soft);
+  color: var(--ksu-primary);
+}
+
+/* 按钮：FlClash pill 主按钮 44–48 */
+.ksu-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: var(--ksu-btn-h);
+  padding: 0 20px;
+  border: 0;
+  border-radius: var(--ksu-btn-radius);
+  background: transparent;
+  color: var(--ksu-on-surface);
+  font: inherit;
+  font-size: var(--ksu-fs-subheadline);
+  font-weight: var(--ksu-weight-medium);
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--ksu-fast) var(--ksu-ease-out),
+    color var(--ksu-fast) var(--ksu-ease-out);
+}
+
+.ksu-btn:hover {
+  background: var(--ksu-hover);
+}
+
+.ksu-btn:active {
+  background: var(--ksu-press);
+  transform: none;
+}
+
+.ksu-btn--primary {
+  background: var(--ksu-primary);
+  color: var(--ksu-on-primary);
+}
+
+.ksu-btn--primary:hover {
+  background: color-mix(in srgb, var(--ksu-primary) 88%, var(--ksu-on-primary));
+}
+
+.ksu-btn--tonal {
+  background: var(--ksu-block);
+  color: var(--ksu-on-surface);
+}
+
+.ksu-btn--tonal:hover {
+  background: color-mix(in srgb, var(--ksu-block) 80%, var(--ksu-on-surface));
+}
+
+.ksu-btn--ghost {
+  background: transparent;
+  color: var(--ksu-primary);
+}
+
+.ksu-btn--ghost:hover {
+  background: var(--ksu-primary-soft);
+}
+
+.ksu-btn--danger {
+  background: var(--ksu-error);
+  color: var(--ksu-on-primary);
+}
+
+.ksu-btn--danger:hover {
+  background: color-mix(in srgb, var(--ksu-error) 86%, var(--ksu-on-primary));
+}
+
+.ksu-btn--sm {
+  min-height: var(--ksu-btn-h-sm);
+  padding: 0 14px;
+  font-size: var(--ksu-fs-footnote);
+}
+
+.ksu-btn--block {
+  display: flex;
+  width: 100%;
+}
+
+.ksu-btn:disabled,
+.ksu-btn.disabled,
+.ksu-btn[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.ksu-btn:disabled:hover,
+.ksu-btn.disabled:hover {
+  background: transparent;
+}
+
+.ksu-btn--primary:disabled:hover {
+  background: var(--ksu-primary);
+}
+
+.ksu-btn--tonal:disabled:hover {
+  background: var(--ksu-block);
+}
+
+.ksu-btn--danger:disabled:hover {
+  background: var(--ksu-error);
+}
+
+/* 圆形主操作按钮（FlClash 右上角绿勾，48–56） */
+.ksu-fab {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: var(--ksu-fab);
+  height: var(--ksu-fab);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--ksu-primary);
+  color: var(--ksu-on-primary);
+  font: inherit;
+  cursor: pointer;
+  transition: background-color var(--ksu-fast) var(--ksu-ease-out),
+    transform var(--ksu-fast) var(--ksu-ease-out);
+}
+
+.ksu-fab svg {
+  width: 22px;
+  height: 22px;
+}
+
+.ksu-fab--lg {
+  width: var(--ksu-fab-lg);
+  height: var(--ksu-fab-lg);
+}
+
+.ksu-fab--success {
+  background: var(--ksu-success);
+  color: var(--ksu-page);
+}
+
+.ksu-fab--danger {
+  background: var(--ksu-error);
+  color: var(--ksu-on-primary);
+}
+
+.ksu-fab--muted {
+  background: var(--ksu-block);
+  color: var(--ksu-on-surface-variant);
+}
+
+.ksu-fab:hover {
+  background: color-mix(in srgb, var(--ksu-primary) 88%, var(--ksu-on-primary));
+}
+
+.ksu-fab--success:hover {
+  background: color-mix(in srgb, var(--ksu-success) 88%, var(--ksu-on-surface));
+}
+
+.ksu-fab--muted:hover {
+  background: color-mix(in srgb, var(--ksu-block) 80%, var(--ksu-on-surface));
+}
+
+.ksu-fab:active {
+  transform: scale(var(--ksu-press));
+}
+
+.ksu-fab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 表单组 */
+.ksu-field {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  min-width: 0;
+  min-height: 0;
+  font-size: var(--ksu-fs-footnote);
+  color: var(--ksu-on-surface-variant);
+}
+
+.ksu-field-label {
+  font-size: var(--ksu-fs-footnote);
+  font-weight: var(--ksu-weight-medium);
+  line-height: 1.4;
+  color: var(--ksu-on-surface-variant);
+}
+
+.ksu-hint {
+  margin: 0;
+  font-size: var(--ksu-fs-footnote);
+  line-height: 1.45;
+  color: var(--ksu-on-surface-variant);
+  overflow-wrap: anywhere;
+}
+
+.ksu-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+
+/* ==========================================================================
+   12. 状态：pill / badge / banner / progress / empty / tabs / table / divider
+   ========================================================================== */
+.ksu-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: var(--ksu-pill-h);
+  padding: 0 10px;
+  border-radius: var(--ksu-radius-pill);
+  background: var(--ksu-block);
+  color: var(--ksu-on-surface-variant);
+  font-size: var(--ksu-fs-caption);
+  font-weight: var(--ksu-weight-medium);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.ksu-pill--ok {
+  background: var(--ksu-success-soft);
+  color: var(--ksu-on-success);
+}
+
+.ksu-pill--warn {
+  background: var(--ksu-warning-soft);
+  color: var(--ksu-on-warning);
+}
+
+.ksu-pill--bad {
+  background: var(--ksu-error-soft);
+  color: var(--ksu-on-error);
+}
+
+.ksu-pill--muted {
+  background: var(--ksu-block);
+  color: var(--ksu-on-surface-variant);
+}
+
+.ksu-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--ksu-badge-h);
+  height: var(--ksu-badge-h);
+  padding: 0 5px;
+  border-radius: var(--ksu-radius-pill);
+  background: var(--ksu-primary);
+  color: var(--ksu-on-primary);
+  font-size: var(--ksu-fs-caption2);
+  font-weight: var(--ksu-weight-semibold);
+  line-height: 1;
+}
+
+.ksu-badge--dot {
+  min-width: var(--ksu-badge-dot);
+  width: var(--ksu-badge-dot);
+  height: var(--ksu-badge-dot);
+  padding: 0;
+}
+
+.ksu-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--ksu-radius-16);
+  background: var(--ksu-block);
+  color: var(--ksu-on-surface);
+}
+
+.ksu-banner--error {
+  background: var(--ksu-error-soft);
+  color: var(--ksu-on-error);
+}
+
+.ksu-banner--info {
+  background: var(--ksu-primary-soft);
+  color: var(--ksu-on-surface);
+}
+
+.ksu-banner--muted {
+  background: var(--ksu-block);
+  color: var(--ksu-on-surface-variant);
+}
+
+.ksu-banner--error .ksu-btn--ghost {
+  color: var(--ksu-on-error);
+}
+
+.ksu-banner-body {
+  display: flex;
+  flex: 1 1 240px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ksu-banner-body strong {
+  font-size: var(--ksu-fs-headline);
+  font-weight: var(--ksu-weight-semibold);
+  line-height: 1.3;
+}
+
+.ksu-banner-body span {
+  font-size: var(--ksu-fs-subheadline);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.ksu-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ksu-progress {
+  position: relative;
+  width: 100%;
+  height: 6px;
+  border-radius: var(--ksu-radius-pill);
+  background: var(--ksu-inset);
+  overflow: hidden;
+}
+
+.ksu-progress-bar {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: var(--ksu-primary);
+  transition: width var(--ksu-base) linear;
+}
+
+.ksu-progress-bar[data-indeterminate='true'] {
+  width: 38%;
+  animation: ksu-indeterminate 1.2s var(--ksu-ease) infinite;
+}
+
+@keyframes ksu-indeterminate {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(320%);
+  }
+}
+
+.ksu-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 32px 20px;
+  color: var(--ksu-on-surface-variant);
+  font-size: var(--ksu-fs-subheadline);
+  line-height: 1.5;
+  text-align: center;
+}
+
+.ksu-empty strong {
+  font-size: var(--ksu-fs-headline);
+  font-weight: var(--ksu-weight-semibold);
+  color: var(--ksu-on-surface);
+}
+
+.ksu-empty p {
+  margin: 0;
+  max-width: 48ch;
+  overflow-wrap: anywhere;
+}
+
+.ksu-empty .ksu-btn {
+  margin-top: 8px;
+}
+
+/* Tab / 分段（pill）：FlClash 的出站模式选择器 */
+.ksu-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  padding: 3px;
+  border-radius: var(--ksu-radius-pill);
+  background: var(--ksu-block);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.ksu-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.ksu-tab {
+  flex: 0 0 auto;
+  min-height: calc(var(--ksu-tab-h) - 6px);
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--ksu-radius-pill);
+  background: transparent;
+  color: var(--ksu-on-surface-variant);
+  font: inherit;
+  font-size: var(--ksu-fs-subheadline);
+  font-weight: var(--ksu-weight-medium);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--ksu-fast) var(--ksu-ease-out),
+    color var(--ksu-fast) var(--ksu-ease-out);
+}
+
+.ksu-tab:hover {
+  color: var(--ksu-on-surface);
+}
+
+.ksu-tab.active {
+  background: var(--ksu-primary);
+  color: var(--ksu-on-primary);
+}
+
+.ksu-table-wrap {
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  border-radius: var(--ksu-radius-12);
+}
+
+.ksu-table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+  font-size: var(--ksu-fs-subheadline);
+  color: var(--ksu-on-surface);
+}
+
+.ksu-table th,
+.ksu-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--ksu-divider);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.ksu-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--ksu-card);
+  color: var(--ksu-on-surface-variant);
+  font-size: var(--ksu-fs-footnote);
+  font-weight: var(--ksu-weight-semibold);
+  white-space: nowrap;
+}
+
+.ksu-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.ksu-table tbody tr:hover {
+  background: var(--ksu-hover);
+}
+
+.ksu-table tr.active {
+  background: var(--ksu-primary-soft);
+}
+
+.ksu-divider {
+  height: 1px;
+  margin: 4px 0;
+  border: 0;
+  background: var(--ksu-divider);
+}
+
+.ksu-chart {
+  width: 100%;
+  min-width: 0;
+  padding: 0 20px 20px;
+  overflow: hidden;
+}
+
+/* ==========================================================================
+   13. 浮层 / 对话框（FlClash：scrim 遮罩 + card 级表面圆角 20）
+   ========================================================================== */
+.ksu-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--ksu-z-sheet);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--ksu-scrim);
+  animation: ksu-fade-in var(--ksu-base) var(--ksu-ease-out);
+}
+
+.ksu-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(520px, 100%);
+  max-height: min(84dvh, 720px);
+  padding: var(--ksu-space-5);
+  border-radius: var(--ksu-radius-20);
+  background: var(--ksu-card);
+  color: var(--ksu-on-surface);
+  box-shadow: var(--ksu-shadow-float);
+  animation: ksu-sheet-in var(--ksu-panel) var(--ksu-ease-out);
+  overflow: hidden;
+}
+
+.ksu-sheet--bottom {
+  align-self: flex-end;
+  width: min(640px, 100%);
+  border-radius: var(--ksu-radius-20) var(--ksu-radius-20) 0 0;
+  animation: ksu-sheet-up var(--ksu-panel) var(--ksu-ease-out);
+}
+
+.ksu-sheet-overlay--bottom {
+  align-items: flex-end;
+  padding: 0;
+}
+
+.ksu-sheet-title {
+  margin: 0;
+  font-size: var(--ksu-fs-title3);
+  font-weight: var(--ksu-weight-semibold);
+  line-height: 1.3;
+}
+
+.ksu-sheet-sub {
+  margin: -6px 0 0;
+  color: var(--ksu-on-surface-variant);
+  font-size: var(--ksu-fs-footnote);
+  line-height: 1.45;
+}
+
+.ksu-sheet-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  font-size: var(--ksu-fs-body);
+  line-height: 1.5;
+  overflow-y: auto;
+}
+
+.ksu-sheet-body p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.ksu-sheet-body label {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  min-height: 0;
+  font-size: var(--ksu-fs-footnote);
+  color: var(--ksu-on-surface-variant);
+}
+
+.ksu-sheet-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.ksu-sheet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.ksu-sheet-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.ksu-sheet-head > div {
+  min-width: 0;
+}
+
+@keyframes ksu-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ksu-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ksu-sheet-up {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 图标按钮（浮层关闭等，40×40 圆角 10） */
+.ksu-iconbtn {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ksu-radius-10);
+  background: transparent;
+  color: var(--ksu-on-surface-variant);
+  font: inherit;
+  cursor: pointer;
+  transition: background-color var(--ksu-fast) var(--ksu-ease-out),
+    color var(--ksu-fast) var(--ksu-ease-out);
+}
+
+.ksu-iconbtn svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ksu-iconbtn:hover {
+  background: var(--ksu-hover);
+  color: var(--ksu-on-surface);
+}
+
+/* ==========================================================================
+   14. 状态横幅栈 / 跳转链接
+   ========================================================================== */
+.ksu-status-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: var(--ksu-card-gap);
+}
+
+.ksu-status-stack:empty {
+  display: none;
+}
+
+.ksu-banner-body .ksu-progress {
+  margin-top: 8px;
+}
+
+.ksu-skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: var(--ksu-z-toast);
+  padding: 8px 12px;
+  border-radius: var(--ksu-radius-8);
+  background: var(--ksu-primary);
+  color: var(--ksu-on-primary);
+  font-size: var(--ksu-fs-footnote);
+  font-weight: var(--ksu-weight-semibold);
+  text-decoration: none;
+  opacity: 0;
+  transform: translateY(-200%);
+  transition: opacity var(--ksu-fast) var(--ksu-ease-out),
+    transform var(--ksu-fast) var(--ksu-ease-out);
+}
+
+.ksu-skip-link:focus-visible {
+  opacity: 1;
+  transform: none;
+}
+
+/* ==========================================================================
+   15. 焦点 / 可达性
+   ========================================================================== */
+.ksu-app :focus-visible,
+.ksu-sheet :focus-visible {
+  outline: 2px solid var(--ksu-primary);
+  outline-offset: 2px;
+}
+
+.ksu-main:focus-visible {
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ksu-app *,
+  .ksu-app *::before,
+  .ksu-app *::after,
+  .ksu-sheet-overlay,
+  .ksu-sheet {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ==========================================================================
+   16. 响应式
+   ========================================================================== */
+@media (min-width: 840px) {
+  .ksu-rail {
+    display: flex;
+  }
+
+  .ksu-dock {
+    display: none;
+  }
+}
+
+@media (max-width: 839.98px) {
+  .ksu-rail {
+    display: none;
+  }
+
+  .ksu-dock {
+    display: flex;
+  }
+
+  .ksu-page-bottom {
+    height: calc(var(--ksu-dock-h) + var(--ksu-dock-bottom) + 32px);
+  }
+
+  .ksu-page-head {
+    min-height: 56px;
+  }
+
+  .ksu-page-title {
+    font-size: var(--ksu-fs-title3);
+  }
+}
+
+/* 悬浮底栏打开时（宽屏也走底栏，隐藏侧栏） */
+.ksu-app.is-dock .ksu-rail {
+  display: none;
+}
+
+.ksu-app.is-dock .ksu-dock {
+  display: flex;
+}
+
+.ksu-app.is-dock .ksu-page-bottom {
+  height: calc(var(--ksu-dock-h) + var(--ksu-dock-bottom) + 40px);
+}
+
+/* 窄屏手机宽度：悬浮坞只留图标，页头压缩 */
+@media (max-width: 599.98px) {
+  .ksu-titlebar-drag {
+    padding: 0 8px;
+  }
+
+  .ksu-dock:not(.is-bar) .ksu-dock-label {
+    display: none;
+  }
+
+  .ksu-dock:not(.is-bar) .ksu-dock-item {
+    min-width: var(--ksu-touch-min);
+    padding: 0 2px;
+  }
+
+  .ksu-dock:not(.is-bar) {
+    left: 12px;
+    right: 12px;
+    transform: none;
+    max-width: none;
+    justify-content: space-around;
+  }
+
+  .ksu-page {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .ksu-page-head {
+    align-items: flex-start;
+  }
+
+  .ksu-page-actions {
+    width: 100%;
+  }
+}
+
+/* 大屏：页面标题 title1（28/700），水平内边距 24 */
+@media (min-width: 1280px) {
+  .ksu-page {
+    padding-left: var(--ksu-page-pad-x-wide);
+    padding-right: var(--ksu-page-pad-x-wide);
+  }
+
+  .ksu-page-title {
+    font-size: var(--ksu-fs-title1);
+    font-weight: var(--ksu-weight-bold);
+  }
+}
+
+/* 窄窗口：display 降一档到 largeTitle 34（FlClash compact density） */
+@media (max-width: 1100px) {
+  .ksu-display,
+  .ksu-stat-value,
+  .ksu-metric-value {
+    font-size: var(--ksu-fs-large-title);
+  }
+}
+
+/* 跨 2 列卡片在窄屏退化为 1 列 */
+@media (max-width: 860px) {
+  .ksu-span-2 {
+    grid-column: span 1;
+  }
+}
+
+/* 行内控件过宽时自动换行，避免挤压 */
+@media (max-width: 720px) {
+  .ksu-row {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .ksu-row-control {
+    max-width: 100%;
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .ksu-row-chevron {
+    align-self: center;
+  }
+}
+
+@media (forced-colors: active) {
+  .ksu-rail-item.active,
+  .ksu-dock-item.active,
+  .ksu-segmented-item.active,
+  .ksu-tab.active {
+    border: 2px solid currentColor;
+  }
+}
+
+/* ==========================================================================
+   20. 全局状态横幅 → 右下角 toast（FlClash 语言：不挤占页面流）
+   页面内容不再被常驻 notice 顶下去；进度/错误/后台任务仍常显在最上层。
+   ========================================================================== */
+.ksu-status-stack {
+  position: fixed;
+  right: var(--ksu-space-4);
+  bottom: calc(var(--ksu-space-4) + env(safe-area-inset-bottom, 0px));
+  z-index: var(--ksu-z-toast);
+  width: min(420px, calc(100vw - 2 * var(--ksu-space-4)));
+  max-height: min(60vh, 520px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ksu-space-2);
+  margin-bottom: 0;
+  padding: 0;
+  pointer-events: none;
+}
+
+.ksu-status-stack:empty {
+  display: none;
+}
+
+.ksu-status-stack > * {
+  pointer-events: auto;
+  border: 1px solid var(--ksu-outline);
+  box-shadow: var(--ksu-shadow-float);
+  backdrop-filter: blur(var(--ksu-blur));
+}
+
+/* 窄屏：toast 贴底栏上方，避免遮挡底部导航 */
+@media (max-width: 839.98px) {
+  .ksu-status-stack {
+    right: var(--ksu-space-3);
+    left: var(--ksu-space-3);
+    width: auto;
+    bottom: calc(var(--ksu-space-3) + 72px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* ==========================================================================
+   21. 双列板式：左右两列各自纵向堆叠，避免不同高卡片在栅格里留大片空洞
+   ========================================================================== */
+.ksu-columns {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--ksu-card-gap);
+  min-width: 0;
+}
+
+.ksu-col {
+  display: flex;
+  flex: 1 1 360px;
+  flex-direction: column;
+  gap: var(--ksu-card-gap);
+  min-width: 0;
+}
+
+.ksu-col--wide {
+  flex: 2 1 560px;
+}
+
+.ksu-col--narrow {
+  flex: 1 1 320px;
+}
+
+@media (max-width: 899.98px) {
+  .ksu-columns {
+    flex-direction: column;
+  }
+
+  .ksu-col,
+  .ksu-col--wide,
+  .ksu-col--narrow {
+    flex-basis: auto;
+    width: 100%;
+  }
+}

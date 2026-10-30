@@ -1,77 +1,257 @@
 /* ==========================================================================
-   Servo Assistant · 风格 A 设计令牌（唯一真相源）
-   基座 #0A1628 · 碎玻璃 + 发光线条 · Maple Mono · 圆角 12 · 阴影收敛
-   规范对照：Material M3（color / type / shape / elevation / motion / state）
+   Servo Assistant · FlClash Windows 设计令牌（唯一色源）
+   依据：docs/flclash-win-spec.md（FlClash v0.9.2，源码 /tmp/flclash）与本机实拍取色。
+   视觉体系 = Apple Dynamic Type 字阶 + M3 Expressive 四级表面 + iOS 蓝主色。
+   四级表面：page → card → block → inset（深色只升不降；卡片无边框、无阴影）。
+   切换方式：<html data-theme="dark|light" data-text-scale="0.9|1|1.1">。
    铁律：除本文件外，禁止在 src 内散写色值（hex / rgb / hsl）。
-   字号/间距/圆角/阴影/动效一律走 var(--sa-*)，不许写裸 px。
-   玻璃只给铬（标题栏/图标栏/侧栏/状态栏/命令面板），内容面板保持实色。
+   旧 --sa-* 名字保留为兼容别名（styles.css / views.css 仍引用），取值改为 FlClash 语义。
    ========================================================================== */
 
+/* ==========================================================================
+   1. 与配色无关的部分：字体 / 字阶 / 间距 / 形状 / 尺寸 / 动效
+   ========================================================================== */
 :root {
-  /* ---- 字体：Maple Mono 优先，本地已有则直接命中，不发网络请求 ---- */
-  --sa-font: "Maple Mono NF CN", "Maple Mono", ui-monospace, SFMono-Regular,
-    Menlo, Consolas, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI",
-    "Noto Sans SC", sans-serif;
-  --sa-font-mono: var(--sa-font);
+  /* 字体：FlClash 用系统字体（Flutter 默认 SF/Segoe），不引第三方字体 */
+  --ksu-font: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text",
+    "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI",
+    "Noto Sans SC", system-ui, sans-serif;
+  --ksu-font-mono: "Cascadia Mono", "Maple Mono NF CN", ui-monospace,
+    SFMono-Regular, Consolas, "PingFang SC", monospace;
+
+  /* 字号缩放：设置页 0.9 / 1.0 / 1.1，落成 html[data-text-scale] */
+  --ksu-text-scale: 1;
+
+  /* Apple Dynamic Type（1dp=1px），全部乘字号缩放（typography.dart） */
+  --ksu-fs-display: calc(40px * var(--ksu-text-scale)); /* display 40/44 */
+  --ksu-fs-large-title: calc(34px * var(--ksu-text-scale)); /* 34/41 */
+  --ksu-fs-title1: calc(28px * var(--ksu-text-scale)); /* 28/34 */
+  --ksu-fs-page-title: calc(24px * var(--ksu-text-scale)); /* 24/30, 600 */
+  --ksu-fs-title2: calc(22px * var(--ksu-text-scale)); /* 22/28 */
+  --ksu-fs-title3: calc(20px * var(--ksu-text-scale)); /* 20/25 */
+  --ksu-fs-headline: calc(17px * var(--ksu-text-scale)); /* 17/22, 600 */
+  --ksu-fs-body: calc(17px * var(--ksu-text-scale)); /* 17/22 */
+  --ksu-fs-callout: calc(16px * var(--ksu-text-scale)); /* 16/21 */
+  --ksu-fs-subheadline: calc(15px * var(--ksu-text-scale)); /* 15/20 */
+  --ksu-fs-footnote: calc(13px * var(--ksu-text-scale)); /* 13/18 */
+  --ksu-fs-caption: calc(12px * var(--ksu-text-scale)); /* 12/16 */
+  --ksu-fs-caption2: calc(11px * var(--ksu-text-scale)); /* 11/13 */
+
+  --ksu-leading-tight: 1.25;
+  --ksu-leading-normal: 1.45;
+  --ksu-leading-loose: 1.6;
+  --ksu-weight-normal: 400;
+  --ksu-weight-medium: 500;
+  --ksu-weight-semibold: 600;
+  --ksu-weight-bold: 700;
+
+  /* 间距（16 栅格） */
+  --ksu-space-1: 4px;
+  --ksu-space-2: 8px;
+  --ksu-space-3: 12px;
+  --ksu-space-4: 16px;
+  --ksu-space-5: 20px;
+  --ksu-space-6: 24px;
+  --ksu-space-8: 32px;
+
+  /* 形状：卡片 20（小卡 16），导航 item 10，输入 12，按钮 pill */
+  --ksu-radius-8: 8px;
+  --ksu-radius-10: 10px;
+  --ksu-radius-12: 12px;
+  --ksu-radius-16: 16px;
+  --ksu-radius-20: 20px;
+  --ksu-radius-pill: 999px;
+
+  /* 动效：FlClash 侧栏 250ms，其余短过渡 */
+  --ksu-ease: cubic-bezier(0.2, 0, 0, 1);
+  --ksu-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ksu-fast: 120ms;
+  --ksu-base: 160ms;
+  --ksu-panel: 250ms;
+  --ksu-press: 0.98;
+
+  --ksu-touch-min: 44px;
+
+  --ksu-z-rail: 10;
+  --ksu-z-dock: 40;
+  --ksu-z-sheet: 80;
+  --ksu-z-toast: 100;
+
+  /* ---- 窗口 / 侧栏 / 页面骨架 ---- */
+  --ksu-titlebar-h: 36px; /* FlClash 自绘拖拽条 */
+  --ksu-titlebar-btn-w: 44px; /* 窗口按钮 44×36 */
+  --ksu-rail-collapsed-w: 48px; /* sidebar.dart:14 */
+  --ksu-rail-expanded-w: 220px; /* sidebar.dart:15 */
+  --ksu-rail-item: 40px; /* sidebar.dart:16 */
+  --ksu-rail-item-gap: 4px; /* sidebar.dart:17 */
+  --ksu-rail-item-radius: 10px; /* sidebar.dart:18 */
+  --ksu-rail-icon: 24px; /* sidebar.dart:19 */
+  --ksu-rail-inset: 4px; /* (48-40)/2 */
+  --ksu-rail-label-gap: 12px;
+  --ksu-rail-toggle-gap: 8px;
+  --ksu-rail-foot: 11px;
+  --ksu-page-toolbar-h: 72px; /* metrics.dart:23 */
+  --ksu-page-pad-x: 16px;
+  --ksu-page-pad-x-wide: 24px;
+  --ksu-page-pad-bottom: 24px;
+  --ksu-page-title-size: var(--ksu-fs-page-title); /* 24/600；大屏 title1 28/700 */
+  --ksu-page-sub-size: var(--ksu-fs-subheadline);
+  --ksu-grid-gap: 16px;
+  --ksu-grid-min: 340px;
+  --ksu-card-gap: 16px;
+  --ksu-card-radius: 20px;
+  --ksu-card-radius-sm: 16px;
+  --ksu-card-pad: 20px;
+  --ksu-row-h: 56px; /* metrics.dart:19 */
+  --ksu-row-pad-y: 10px;
+  --ksu-row-pad-x: 16px;
+  --ksu-row-title-size: var(--ksu-fs-headline);
+  --ksu-row-title-weight: var(--ksu-weight-semibold);
+  --ksu-row-sub-size: var(--ksu-fs-subheadline);
+  --ksu-card-title-size: var(--ksu-fs-headline);
+  --ksu-card-sub-size: var(--ksu-fs-footnote);
+  --ksu-icon-size: 24px;
+  --ksu-icon-size-sm: 20px;
+
+  /* ---- 控件 ---- */
+  --ksu-btn-h: 44px;
+  --ksu-btn-h-sm: 36px;
+  --ksu-btn-radius: var(--ksu-radius-pill);
+  --ksu-fab: 48px;
+  --ksu-fab-lg: 56px;
+  --ksu-field-h: 44px;
+  --ksu-segmented-h: 40px;
+  --ksu-tab-h: 40px;
+  --ksu-switch-w: 52px; /* M3 52×32，拇指 28 选中带勾 */
+  --ksu-switch-h: 32px;
+  --ksu-switch-thumb-size: 28px;
+  --ksu-switch-offset: 2px;
+  --ksu-slider-h: 28px;
+  --ksu-slider-thumb: 20px;
+  --ksu-slider-track-h: 16px; /* M3 Expressive 轨道 16 */
+  --ksu-pill-h: 24px;
+  --ksu-badge-h: 18px;
+  --ksu-badge-dot: 6px;
+
+  /* ---- 窄屏导航 ---- */
+  --ksu-navbar-h: 64px;
+  --ksu-dock-h: 64px;
+  --ksu-dock-pad: 4px;
+  --ksu-dock-bottom: 16px;
+  --ksu-dock-side: 28px;
+  --ksu-dock-tab-min-w: 76px;
+  --ksu-dock-indicator-h: 56px;
+  --ksu-dock-icon: 24px;
+  --ksu-dock-label: 11px;
+  --ksu-dock-label-leading: 13px;
+
+  --ksu-page-bottom: 24px;
+}
+
+/* 字号缩放档位（设置页切换） */
+:root[data-text-scale='0.9'] {
+  --ksu-text-scale: 0.9;
+}
+
+:root[data-text-scale='1'] {
+  --ksu-text-scale: 1;
+}
+
+:root[data-text-scale='1.1'] {
+  --ksu-text-scale: 1.1;
+}
+
+/* ==========================================================================
+   2. 深色（FlClash pureBlack 实拍）：page #000 · card #191A1C · block #252528 · inset #2F3134
+   ========================================================================== */
+:root,
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --ksu-page: #000000;
+  --ksu-card: #191a1c;
+  --ksu-block: #252528;
+  --ksu-inset: #2f3134;
+  --ksu-chrome: #000000; /* 侧栏 / 普通底栏与页面同色（实拍） */
+
+  --ksu-on-surface: #f5f6ff;
+  --ksu-on-surface-variant: #a6a9b2;
+  --ksu-outline: #3a3d42;
+  --ksu-divider: rgba(245, 246, 255, 0.14); /* onSurface @14% */
+
+  --ksu-primary: #2f83ff;
+  --ksu-on-primary: #ffffff;
+  --ksu-primary-soft: color-mix(in srgb, var(--ksu-primary) 15%, transparent);
+
+  --ksu-success: #30d158;
+  --ksu-on-success: #30d158;
+  --ksu-success-soft: rgba(48, 209, 88, 0.16);
+  --ksu-warning: #ff9f0a;
+  --ksu-on-warning: #ff9f0a;
+  --ksu-warning-soft: rgba(255, 159, 10, 0.16);
+  --ksu-error: #ff453a;
+  --ksu-on-error: #ff453a;
+  --ksu-error-soft: rgba(255, 69, 58, 0.16);
+
+  --ksu-selected-fill: rgba(245, 246, 255, 0.08); /* onSurface @8% */
+  --ksu-hover: rgba(245, 246, 255, 0.04);
+  --ksu-press: rgba(245, 246, 255, 0.06);
+  --ksu-scrim: rgba(0, 0, 0, 0.55);
+
+  --ksu-switch-track: #2f3134;
+  --ksu-switch-thumb-color: #ffffff;
+  --ksu-slider-track: rgba(245, 246, 255, 0.16);
+  --ksu-slider-key: rgba(166, 169, 178, 0.3);
+  --ksu-shadow-soft: 0 0 0 0 transparent; /* FlClash 卡片无阴影 */
+  --ksu-shadow-float: 0 10px 28px rgba(0, 0, 0, 0.45);
+  --ksu-dock-bg: #252528;
+
+  /* ---- 旧 --sa-* 兼容别名（styles.css / views.css / bridge-a.css 仍引用） ---- */
+  --sa-font: var(--ksu-font);
+  --sa-font-mono: var(--ksu-font-mono);
   --sa-tabular: tabular-nums;
-
-  /* ---- 字阶（只许用这六档 + 仪器微标两档） ---- */
   --sa-text-10: 10px;
-  --sa-text-11: 11px;
-  --sa-text-12: 12px;
-  --sa-text-13: 13px;
-  --sa-text-14: 14px;
-  --sa-text-16: 16px;
-  --sa-text-20: 20px;
-  --sa-text-24: 24px;
-  --sa-leading-tight: 1.5;
-  --sa-leading-loose: 1.6;
-  --sa-weight-normal: 400;
-  --sa-weight-medium: 500;
-  --sa-weight-semibold: 600;
-  --sa-weight-bold: 700;
-
-  /* ---- 地基层（深蓝 #0A1628 起跳，只向上做三级） ---- */
-  --sa-bg-0: #0a1628;
-  --sa-bg-1: #0f2342;
-  --sa-bg-2: #15304f;
-  --sa-bg-sunken: #071120;
-  --sa-bg-solid: #0e1f3a;
-
-  /* ---- 玻璃（只给铬用，内容面板不用） ---- */
-  --sa-glass: rgba(13, 32, 60, 0.66);
-  --sa-glass-strong: rgba(15, 35, 66, 0.88);
-  --sa-glass-wash: rgba(148, 205, 255, 0.07);
+  --sa-text-11: var(--ksu-fs-caption2);
+  --sa-text-12: var(--ksu-fs-caption);
+  --sa-text-13: var(--ksu-fs-footnote);
+  --sa-text-14: var(--ksu-fs-subheadline);
+  --sa-text-16: var(--ksu-fs-callout);
+  --sa-text-20: var(--ksu-fs-title3);
+  --sa-text-24: var(--ksu-fs-page-title);
+  --sa-leading-tight: var(--ksu-leading-tight);
+  --sa-leading-loose: var(--ksu-leading-normal);
+  --sa-weight-normal: var(--ksu-weight-normal);
+  --sa-weight-medium: var(--ksu-weight-medium);
+  --sa-weight-semibold: var(--ksu-weight-semibold);
+  --sa-weight-bold: var(--ksu-weight-bold);
+  --sa-bg-0: var(--ksu-page);
+  --sa-bg-1: var(--ksu-card);
+  --sa-bg-2: var(--ksu-block);
+  --sa-bg-sunken: var(--ksu-inset);
+  --sa-bg-solid: var(--ksu-card);
+  --sa-glass: color-mix(in srgb, var(--ksu-block) 82%, transparent);
+  --sa-glass-strong: color-mix(in srgb, var(--ksu-block) 94%, transparent);
+  --sa-glass-wash: var(--ksu-hover);
   --sa-blur: 20px;
   --sa-saturate: 160%;
-
-  /* ---- 线条与发光（碎玻璃的裂纹光，1px 收敛） ---- */
-  --sa-line: rgba(148, 205, 255, 0.16);
-  --sa-line-soft: rgba(148, 205, 255, 0.09);
-  --sa-line-strong: rgba(148, 205, 255, 0.32);
-  --sa-rim: inset 0 1px 0 rgba(178, 226, 255, 0.18);
-  --sa-glow-soft: 0 0 16px rgba(90, 170, 255, 0.18);
-  --sa-glow-line: 0 0 0 1px rgba(140, 210, 255, 0.18);
-
-  /* ---- 墨色（冷白蓝，保证深底对比 4.5:1 以上） ---- */
-  --sa-ink: #eaf3ff;
-  --sa-muted: #a9c1dc;
-  --sa-faint: #6e87a3;
-
-  /* ---- 主强调（冷蓝-冰青系，替代旧香槟金） ---- */
-  --sa-accent: #6fc7ff;
-  --sa-accent-strong: #3aa5f5;
-  --sa-accent-soft: rgba(111, 199, 255, 0.14);
-  --sa-accent-ink: #04263e;
-  --sa-grad-brand: linear-gradient(90deg, #3aa5f5 0%, #6fc7ff 100%);
-
-  /* ---- 语义色（各一枚，深底校准过） ---- */
-  --sa-info: #7cc7ff;
-  --sa-success: #4ade9e;
-  --sa-warning: #fbbf24;
-  --sa-danger: #ff7a7a;
-
-  /* ---- 图表序列色（数据色，与 styles/chart-palette.ts 保持一致） ---- */
+  --sa-line: var(--ksu-divider);
+  --sa-line-soft: color-mix(in srgb, var(--ksu-divider) 60%, transparent);
+  --sa-line-strong: var(--ksu-outline);
+  --sa-rim: inset 0 1px 0 transparent;
+  --sa-glow-soft: 0 0 0 0 transparent;
+  --sa-glow-line: 0 0 0 1px transparent;
+  --sa-ink: var(--ksu-on-surface);
+  --sa-muted: var(--ksu-on-surface-variant);
+  --sa-faint: color-mix(in srgb, var(--ksu-on-surface-variant) 72%, transparent);
+  --sa-accent: var(--ksu-primary);
+  --sa-accent-strong: var(--ksu-primary);
+  --sa-accent-soft: var(--ksu-primary-soft);
+  --sa-accent-ink: var(--ksu-on-primary);
+  --sa-grad-brand: linear-gradient(90deg, var(--ksu-primary) 0%, var(--ksu-primary) 100%);
+  --sa-info: var(--ksu-primary);
+  --sa-success: var(--ksu-success);
+  --sa-warning: var(--ksu-warning);
+  --sa-danger: var(--ksu-error);
   --sa-chart-1: #eba937;
   --sa-chart-2: #8ab4f8;
   --sa-chart-3: #4cc38a;
@@ -82,106 +262,139 @@
   --sa-hist-2: #f7b955;
   --sa-hist-3: #73a9ff;
   --sa-hist-4: #d59aff;
-
-  /* ---- 间距（只许用这六档） ---- */
-  --sa-space-1: 4px;
-  --sa-space-2: 8px;
-  --sa-space-3: 12px;
-  --sa-space-4: 16px;
-  --sa-space-6: 24px;
-  --sa-space-8: 32px;
-
-  /* ---- 圆角（主角 12，其余配角） ---- */
-  --sa-radius-8: 8px;
-  --sa-radius-12: 12px;
-  --sa-radius-16: 16px;
-  --sa-radius-pill: 999px;
-
-  /* ---- 阴影（只收敛成两档，不许自创第三档） ---- */
-  --sa-shadow-soft: 0 12px 32px -16px rgba(2, 8, 18, 0.8);
-  --sa-shadow-float: 0 20px 60px -12px rgba(2, 8, 18, 0.75);
-
-  /* ---- 动效（三档 + 强 ease-out，玻璃不动大面积动画） ----
-     Emil 映射：press 100-160 / 下拉 150-250 / 模态抽屉 200-500 / stagger 30-80；
-     命令面板（键盘唤起）保持零动画，不走这三档。 */
-  --sa-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-  --sa-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
-  --sa-ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
-  --sa-fast: 140ms;
-  --sa-base: 180ms;
-  --sa-panel: 240ms;
-  --sa-stagger: 50ms;
-  --sa-press: 0.97;
-
-  /* ---- 壳尺寸（VSCode 四区 + 命令面板） ---- */
-  --sa-titlebar-h: 40px;
-  --sa-activity-w: 52px;
-  --sa-sidebar-w: 280px;
-  --sa-statusbar-h: 28px;
+  --sa-space-1: var(--ksu-space-1);
+  --sa-space-2: var(--ksu-space-2);
+  --sa-space-3: var(--ksu-space-3);
+  --sa-space-4: var(--ksu-space-4);
+  --sa-space-6: var(--ksu-space-6);
+  --sa-space-8: var(--ksu-space-8);
+  --sa-radius-8: var(--ksu-radius-8);
+  --sa-radius-12: var(--ksu-radius-12);
+  --sa-radius-16: var(--ksu-radius-16);
+  --sa-radius-pill: var(--ksu-radius-pill);
+  --sa-shadow-soft: var(--ksu-shadow-soft);
+  --sa-shadow-float: var(--ksu-shadow-float);
+  --sa-ease-out: var(--ksu-ease-out);
+  --sa-ease-in-out: var(--ksu-ease);
+  --sa-ease-drawer: var(--ksu-ease-out);
+  --sa-fast: var(--ksu-fast);
+  --sa-base: var(--ksu-base);
+  --sa-panel: var(--ksu-panel);
+  --sa-stagger: 40ms;
+  --sa-press: var(--ksu-press);
+  --sa-titlebar-h: var(--ksu-titlebar-h);
+  --sa-activity-w: var(--ksu-rail-collapsed-w);
+  --sa-sidebar-w: var(--ksu-rail-expanded-w);
+  --sa-statusbar-h: 24px;
   --sa-palette-w: 560px;
-
-  /* ---- 断点与触控 ---- */
-  --sa-bp-tablet: 1024px;
-  --sa-touch-min: 44px;
-
-  /* ---- 层级 ---- */
+  --sa-bp-tablet: 840px;
+  --sa-touch-min: var(--ksu-touch-min);
   --sa-z-base: 1;
-  --sa-z-sticky: 10;
-  --sa-z-palette: 80;
-  --sa-z-toast: 100;
+  --sa-z-sticky: var(--ksu-z-rail);
+  --sa-z-palette: var(--ksu-z-sheet);
+  --sa-z-toast: var(--ksu-z-toast);
+  --sa-tab-card-bg: var(--ksu-card);
+  --sa-tab-card-radius: var(--ksu-card-radius);
+  --sa-tab-card-pad: var(--ksu-card-pad);
+  --sa-tab-card-gap: var(--ksu-card-gap);
+  --sa-tab-card-maxw: none;
+  --sa-tab-row-min-h: var(--ksu-row-h);
+  --sa-tab-row-gap: var(--ksu-space-3);
+  --sa-tab-icon: var(--ksu-icon-size);
+  --sa-tab-icon-radius: var(--ksu-radius-8);
+  --sa-tab-title: var(--ksu-row-title-size);
+  --sa-tab-sub: var(--ksu-row-sub-size);
+  --sa-tab-toggle-w: var(--ksu-switch-w);
+  --sa-tab-toggle-h: var(--ksu-switch-h);
+  --sa-tab-toggle-on: var(--ksu-primary);
+  --sa-tab-slider-hit: var(--ksu-slider-h);
+  --sa-tab-slider-thumb: var(--ksu-slider-thumb);
+  --sa-tab-select-h: var(--ksu-field-h);
+  --sa-tab-sheet-radius: var(--ksu-radius-16);
+  --sa-tab-dock-h: var(--ksu-dock-h);
+  --sa-tab-dock-radius: var(--ksu-radius-pill);
+  --sa-tab-dock-pad: var(--ksu-dock-pad);
+  --sa-tab-dock-bottom: var(--ksu-dock-bottom);
+  --sa-tab-dock-bg: var(--ksu-dock-bg);
+  --sa-tab-badge-bg: var(--ksu-primary);
+  --sa-tab-badge-ink: var(--ksu-on-primary);
+  --sa-tab-page-bottom: var(--ksu-page-bottom);
 
-  /* ---- 平板主题（Miuix 结构，对照 KernelSU-Next 系 Manager「设置 / 主题设置」两屏） ----
-     只出 token，不改视图。颜色全部引用已有 --sa-*，零新增色值；
-     尺寸用 px 落在 --sa-tab-* 上，供后续视图直接引用。 */
-  /* 分组卡：设置页分组圆角卡（截图里纵向堆叠的大圆角卡片） */
-  --sa-tab-card-bg: var(--sa-bg-1); /* 卡背景：取实色底，不走玻璃 */
-  --sa-tab-card-radius: var(--sa-radius-16); /* 卡圆角：对应卡片 16 */
-  --sa-tab-card-pad: var(--sa-space-4); /* 卡内边距：对应卡片内 16 */
-  --sa-tab-card-gap: var(--sa-space-3); /* 卡间距：对应卡与卡之间 12 */
-  --sa-tab-card-maxw: 840px; /* 卡最大宽：平板单列 840，上限居中 */
-  /* 行：卡内“左图标 + 标题 + 副标题 + 右控件”的一行（截图每条设置项） */
-  --sa-tab-row-min-h: 64px; /* 行高 64（触控保底 44 上再放大） */
-  --sa-tab-row-gap: var(--sa-space-3); /* 行内图标与文字间距 12 */
-  --sa-tab-icon: 28px; /* 左图标尺寸 28 */
-  --sa-tab-icon-radius: var(--sa-radius-8); /* 左图标圆角 8 */
-  --sa-tab-title: var(--sa-text-16); /* 行标题字号 16 */
-  --sa-tab-sub: var(--sa-text-13); /* 行副标题字号 13 */
-  /* 右侧控件：开关 / 滑杆 / 下拉（截图行尾混排的三种控件） */
-  --sa-tab-toggle-w: 52px; /* 开关宽 52（截图亮蓝开关） */
-  --sa-tab-toggle-h: 32px; /* 开关高 32 */
-  --sa-tab-toggle-on: var(--sa-accent-strong); /* 开关开态底：取亮蓝 accent */
-  --sa-tab-slider-hit: 28px; /* 滑杆热区高 28（对应“界面缩放/描述最大行数”刻度条） */
-  --sa-tab-slider-thumb: 28px; /* 滑杆拇指直径 28 */
-  --sa-tab-select-h: 48px; /* 下拉行高 48 */
-  --sa-tab-sheet-radius: var(--sa-radius-16); /* 下拉浮层圆角 16（Miuix 小弹窗） */
-  /* 悬浮胶囊坞 + 角标（截图底部悬浮导航坞及图标右上角数字标） */
-  --sa-tab-dock-h: 72px; /* 悬浮坞高 72 */
-  --sa-tab-dock-radius: var(--sa-radius-pill); /* 悬浮坞胶囊圆角 */
-  --sa-tab-dock-pad: var(--sa-space-3); /* 悬浮坞内边距 12 */
-  --sa-tab-dock-bottom: var(--sa-space-4); /* 悬浮坞底边距 16 */
-  --sa-tab-dock-bg: var(--sa-glass-strong); /* 悬浮坞背景：取铬玻璃，模糊吃 --sa-blur */
-  --sa-tab-badge-bg: var(--sa-accent-strong); /* 角标底：取 accent 亮蓝 */
-  --sa-tab-badge-ink: var(--sa-accent-ink); /* 角标字：取 accent 深字 */
-  /* 列表底垫：页面末尾预留高度，防悬浮坞遮挡最后一行 */
-  --sa-tab-page-bottom: 104px;
+  /* ---- 上一版 --ksu-* 命名兼容别名（防止其它文件残留引用） ---- */
+  --ksu-bg: var(--ksu-page);
+  --ksu-card-high: var(--ksu-block);
+  --ksu-field-bg: var(--ksu-inset);
+  --ksu-on-bg: var(--ksu-on-surface);
+  --ksu-on-card: var(--ksu-on-surface);
+  --ksu-text-secondary: var(--ksu-on-surface-variant);
+  --ksu-text-muted: color-mix(in srgb, var(--ksu-on-surface-variant) 78%, transparent);
+  --ksu-text-faint: color-mix(in srgb, var(--ksu-on-surface-variant) 60%, transparent);
+  --ksu-line: var(--ksu-divider);
+  --ksu-line-strong: var(--ksu-outline);
+  --ksu-on-tonal: var(--ksu-on-surface);
+  --ksu-selected-pill: var(--ksu-selected-fill);
+  --ksu-selected-pill-ink: var(--ksu-primary);
+  --ksu-secondary: var(--ksu-block);
+  --ksu-on-secondary: var(--ksu-on-surface);
+  --ksu-secondary-container: var(--ksu-block);
+  --ksu-on-secondary-container: var(--ksu-on-surface);
+  --ksu-error-container: var(--ksu-error-soft);
+  --ksu-on-error-container: var(--ksu-on-error);
+  --ksu-success-bg: var(--ksu-success-soft);
+  --ksu-success-ink: var(--ksu-on-success);
+  --ksu-warning-bg: var(--ksu-warning-soft);
+  --ksu-warning-ink: var(--ksu-on-warning);
+  --ksu-info: var(--ksu-primary);
+  --ksu-appbar-h: var(--ksu-titlebar-h);
 }
 
-/* 碎玻璃底：两层对角碎片渐变 + 底色，intensity 收敛，不抢内容 */
-.sa-shard-bg {
-  background:
-    linear-gradient(115deg, rgba(111, 199, 255, 0.07) 0%, transparent 32%),
-    linear-gradient(295deg, rgba(58, 165, 245, 0.06) 0%, transparent 28%),
-    var(--sa-bg-0);
+/* ==========================================================================
+   3. 浅色：page #ECEDF9 · card #F9F9FF · block #E6E8F3 · inset #E0E2ED
+   ========================================================================== */
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --ksu-page: #ecedf9;
+  --ksu-card: #f9f9ff;
+  --ksu-block: #e6e8f3;
+  --ksu-inset: #e0e2ed;
+  --ksu-chrome: #ecedf9;
+
+  --ksu-on-surface: #181c23;
+  --ksu-on-surface-variant: #414755;
+  --ksu-outline: #717786;
+  --ksu-divider: rgba(24, 28, 35, 0.14);
+
+  --ksu-primary: #007aff;
+  --ksu-on-primary: #ffffff;
+  --ksu-primary-soft: color-mix(in srgb, var(--ksu-primary) 14%, transparent);
+
+  --ksu-success: #248a3d;
+  --ksu-on-success: #1b6e30;
+  --ksu-success-soft: rgba(36, 138, 61, 0.12);
+  --ksu-warning: #b25000;
+  --ksu-on-warning: #8a3f00;
+  --ksu-warning-soft: rgba(178, 80, 0, 0.12);
+  --ksu-error: #ba1a1a;
+  --ksu-on-error: #a31616;
+  --ksu-error-soft: rgba(186, 26, 26, 0.1);
+
+  --ksu-selected-fill: rgba(24, 28, 35, 0.07);
+  --ksu-hover: rgba(24, 28, 35, 0.04);
+  --ksu-press: rgba(24, 28, 35, 0.07);
+  --ksu-scrim: rgba(0, 0, 0, 0.3);
+
+  --ksu-switch-track: #e0e2ed;
+  --ksu-switch-thumb-color: #ffffff;
+  --ksu-slider-track: rgba(24, 28, 35, 0.12);
+  --ksu-slider-key: rgba(65, 71, 85, 0.3);
+  --ksu-shadow-soft: 0 0 0 0 transparent;
+  --ksu-shadow-float: 0 10px 28px rgba(0, 0, 0, 0.14);
+  --ksu-dock-bg: #e6e8f3;
 }
 
-/* 发光线工具：1px 高亮描边 + 一圈很淡的外发光 */
-.sa-glow-border {
-  border: 1px solid var(--sa-line);
-  box-shadow: var(--sa-rim), var(--sa-glow-soft);
-}
-
-/* 触控保底：所有可点元素不小于 44px（平板单列同样生效） */
+/* 触控保底工具类（旧代码仍在用） */
 .sa-touch {
-  min-width: var(--sa-touch-min);
-  min-height: var(--sa-touch-min);
+  min-width: var(--ksu-touch-min);
+  min-height: var(--ksu-touch-min);
 }

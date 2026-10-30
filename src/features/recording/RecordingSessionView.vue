@@ -103,71 +103,404 @@ defineExpose({ applyMailboxes });
 async function tick() { if (disposed) return; try { if (!busy.value) { await refresh(); if (follow.value && !pageBusy.value && !fileMode.value && path.value) await page(0, true); } } catch (e) { error.value = String(e); } if (!disposed) timer = setTimeout(tick, 1000); }
 onMounted(() => { void tick(); }); onUnmounted(() => { disposed = true; pageVersion++; detailVersion++; clearTimeout(timer); clearTimeout(filterTimer); });
 </script>
-
 <template>
-  <section class="panel workbench">
-        <p v-if="error" class="error" role="alert">{{ error }}</p><p v-if="notice" class="notice">{{ notice }}</p>
-    <div class="recording-grid">
-      <section class="recording-section"><h3>统一通信录制</h3>
-      <p>保存应用实际收发的串口字节、EtherCAT 主站帧和模拟器事件。暂停曲线或切换页面不停止录制；未知协议原样保留。</p>
-      <details><summary>故障触发录制</summary><div class="controls"><label><input v-model="triggerEnabled" type="checkbox" :disabled="status?.active" />等待故障后保存</label><label>故障前 <input v-model.number="preSeconds" type="number" min="0" max="300" :disabled="status?.active" /> 秒</label><label>故障后 <input v-model.number="postSeconds" type="number" min="1" max="300" :disabled="status?.active" /> 秒</label><input v-model="triggerKeyword" maxlength="256" :disabled="status?.active" placeholder="可选事件关键词；留空使用事务失败触发" aria-label="故障触发关键词" /></div><p>默认由超时、校验错误、设备异常等失败事务触发一次，故障后自动停止。故障前缓冲最多 16 MiB / 300 秒，超过限制的旧记录会被主动淘汰；配置变更始终保存。未触发便停止时，缓冲报文不保存。</p></details>
-      <div class="controls"><label>容量上限 <input v-model.number="limit" type="number" min="16" max="16384" /> MiB</label><button :disabled="busy || status?.active" @click="start">开始录制</button><button :disabled="busy || !status?.path" @click="stop">停止并落盘</button><span>{{ status?.active ? '正在录制' : '未录制' }} · 已接收 {{ status?.accepted ?? 0 }} · 已写 {{ status?.written ?? 0 }} · 队列丢弃 {{ status?.dropped ?? 0 }} · 未写入 {{ status?.unwritten ?? 0 }}</span></div>
-      <p class="path">{{ status?.path }}</p><p v-if="status?.error" class="error">{{ status.error }}</p>
-      <p v-if="status?.armed" class="notice">正在等待故障触发 · 故障前缓冲主动淘汰 {{ status.discarded ?? 0 }} 条</p><p v-if="status?.triggeredAtUs" class="notice">已于 {{ time(status.triggeredAtUs) }} 触发{{ status.active ? '，正在保存故障后数据' : '，已停止' }} · 主动淘汰 {{ status.discarded ?? 0 }} 条</p>
-      <details><summary>在线网卡捕获 · 独立写入 PCAPNG</summary>
-        <p>需要 Npcap。网卡仅能捕获所在位置可见的流量；使用主站网卡或实际 TAP/镜像口。捕获方向未知时不推断收发。</p>
-        <div class="controls"><button :disabled="busy" @click="action(async () => { adapters = await invoke('ethercat_adapters'); adapter = adapters[0]?.name ?? ''; })">刷新网卡</button><select v-model="adapter" :disabled="capture?.active"><option value="">选择捕获网卡</option><option v-for="a in adapters" :key="a.name" :value="a.name">{{ a.description }}</option></select><label><input v-model="onlyEthercat" type="checkbox" :disabled="capture?.active" />仅 EtherCAT（含 VLAN）</label><button :disabled="busy || !adapter || capture?.active" @click="action(async () => { capture = await invoke('start_network_capture', { adapter, ethercatOnly: onlyEthercat, limitMb: limit }); })">开始网卡捕获</button><button :disabled="busy || !capture?.path" @click="action(async () => { capture = await invoke('stop_network_capture'); })">停止网卡捕获</button></div>
-        <p>{{ capture?.active ? '捕获中' : '未捕获' }} · {{ capture?.packets ?? 0 }} 帧 · 驱动丢包 {{ capture?.driverDropped ?? '未知' }}</p><p class="path">{{ capture?.path }}</p><p v-if="capture?.error" class="error">{{ capture.error }}</p>
-      </details>
-      </section><section class="recording-section"><h3>报文浏览与事务解析</h3>
-      <RecordingLibrary :path="path" :file-mode="fileMode" :sessions="sessions" @open="openSession" />
-      <div class="controls"><label><input v-model="fileMode" type="checkbox" />PCAP / PCAPNG 文件或分卷目录</label></div>
-      <div class="controls"><input v-model="path" class="path-input" :placeholder="fileMode ? '输入 PCAP / PCAPNG 文件完整路径' : '录制会话目录完整路径'" aria-label="录制或捕获路径" /><button :disabled="busy || pageBusy || !path" @click="page(0)">{{ pageBusy ? '检索中…' : '打开 / 刷新' }}</button><button :disabled="busy || !path || fileMode" :aria-pressed="follow" @click="toggleFollow">{{ follow ? '暂停跟随' : '跟随最新报文' }}</button><button :disabled="busy || !path || fileMode || status?.active" @click="exportPcap">导出以太网 PCAPNG</button></div>
-      <details><summary>邮箱 / PDO 解析映射</summary><label>导入 JSON 映射 <input type="file" accept=".json" @change="importMap" /></label><textarea v-model="mapping" rows="7" aria-label="解析映射 JSON" /><button :disabled="busy" @click="saveMapping">保存映射到录制上下文</button><p>历史录制优先使用报文当时保存的映射。旧会话或外部 PCAP 没有映射时使用此处手动配置；PDO 字段必须来自实际工程定义。</p></details>
-      <div class="controls"><input v-model="query" :placeholder="fileMode ? '全部 PCAP 分卷搜索：来源、协议、事件、字节' : '全会话搜索：来源、协议、事务、事件、十六进制字节'" aria-label="报文筛选" /><select v-model="direction" aria-label="方向筛选"><option value="">所有方向</option><option>tx</option><option>rx</option><option>event</option><option>unknown</option></select><button :disabled="busy || pageBusy || offset === 0" @click="page(Math.max(0, offset - 100))">上一页</button><button :disabled="busy || pageBusy || next === null" @click="page(next!)">下一页</button><span>{{ total === null ? '本页 ' + rows.length + ' 条' : '共 ' + total + ' 条匹配 · ' + (rows.length ? offset + 1 : 0) + '–' + (offset + rows.length) }}{{ follow ? ' · 自动跟随中' : '' }}</span></div>
-      <details open><summary>时间与协议精确筛选</summary><div class="controls time-filters"><label>开始 <input v-model="fromTime" type="datetime-local" step="0.001" /></label><label>结束 <input v-model="toTime" type="datetime-local" step="0.001" /></label><input v-model="sourceFilter" placeholder="来源精确匹配（可从报文复制）" aria-label="来源筛选" /><input v-model="protocolFilter" placeholder="协议，如 modbus-rtu / ethernet" aria-label="协议筛选" /></div><div v-if="!fileMode" class="controls"><input v-model="slaveFilter" placeholder="站号" aria-label="站号筛选" /><input v-model="functionFilter" placeholder="功能码，如 3 / 0x06" aria-label="功能码筛选" /><input v-model="addressFilter" placeholder="包含寄存器地址，如 0x100" aria-label="地址筛选" /><select v-model="outcomeFilter" aria-label="事务结果筛选"><option value="">所有事务结果</option><option value="success">成功</option><option value="failure">失败 / 设备异常</option><option value="incomplete">缺少事务结束</option></select></div><button @click="clearFilters">清除全部筛选</button></details>
-      <p class="field-help">{{ fileMode ? '搜索与时间筛选覆盖所选文件或目录中的全部 PCAP 分卷。首次建立缓存可能较慢；源文件变化后重建，请优先打开已停止的捕获。' : '全部筛选作用于整个会话；站号、地址和结果关联完整事务。跟随显示最新 100 条已落盘匹配记录，查看详情时录制继续。' }}</p>
-      <RecordingHistory :path="path" :file-mode="fileMode" :from-us="fromUs" :to-us="toUs" @select="locatePoint" />
-      <p v-if="browseError" class="error" role="alert">{{ browseError }}</p><p v-if="pageWarning" class="recording-warning" role="status">{{ pageWarning }}</p>
-      <div ref="recordTable" class="table-scroll" @wheel.passive="pauseFollow" @focusin="pauseFollow"><table><thead><tr><th>序号 / 时间</th><th>来源 / 协议</th><th>方向 / 事务</th><th>字节</th><th>事件</th></tr></thead><tbody><tr v-for="r in visible" :key="r.sequence" :class="{ chosen: selected === r }" tabindex="0" @click="details(r)" @keydown.enter="details(r)"><td>{{ r.sequence }}<br />{{ time(r.timestampUs) }}</td><td>{{ r.source }}<br />{{ r.protocol }}</td><td>{{ r.direction }} / {{ r.transaction || '—' }}</td><td>{{ r.bytes.length }}</td><td>{{ r.detail }}</td></tr></tbody></table><p v-if="!visible.length">{{ pageBusy ? '正在建立索引或检索报文…' : '没有匹配的报文。打开会话、清除筛选或开启跟随查看新记录。' }}</p></div>
-      <p v-if="detailBusy">正在关联完整事务…</p>
-      <section v-if="modbusDetail" class="modbus-transaction">
-        <h3>Modbus 事务 #{{ modbusDetail.transaction }} · {{ modbusDetail.outcome }}</h3>
-        <p>{{ modbusDetail.source }} · {{ modbusDetail.protocol }} · 应用观测耗时 {{ modbusDetail.durationUs === null ? '未知' : modbusDetail.durationUs + ' μs' }}（不是线缆传输时间）</p>
-        <p v-if="modbusDetail.warning" class="recording-warning">{{ modbusDetail.warning }}</p>
-        <div class="detail-grid"><article v-for="(frame, i) in [modbusDetail.request, modbusDetail.response]" :key="i">
-          <h3>{{ i ? '响应' : '请求' }} · {{ frame.checksum }}</h3>
-          <p>站号 {{ frame.slave ?? '—' }} · 功能码 {{ frame.function === null ? '—' : '0x' + frame.function.toString(16).toUpperCase() }} · 起始地址 {{ frame.address === null ? '—' : '0x' + frame.address.toString(16).toUpperCase() }} · 数量 {{ frame.count ?? '—' }}</p>
-          <p v-if="frame.error" class="error">{{ frame.error }}</p><p v-if="frame.exception" class="error">{{ frame.exception }}</p>
-          <pre>{{ frame.hex || '未记录字节' }}</pre><p v-if="frame.values.length">原始寄存器值（未按设备 Profile 缩放）</p><pre v-if="frame.values.length">{{ frame.values.join(', ') }}</pre>
-        </article></div>
-        <details><summary>事务事件（包含部分收发、清空与结束结果）</summary><pre>{{ modbusDetail.events.join('\n') || '无事件' }}</pre></details>
-      </section>
-      <div v-if="selected && !modbusDetail && !detailBusy" class="detail-grid"><div><h3>原始字节</h3><pre>{{ hex(selected.bytes) || '无字节，只有事件' }}</pre></div><div><h3>标准字段解析</h3><pre>{{ decoded ? JSON.stringify(decoded, null, 2) : '该记录保留原始内容；没有可用的结构化协议解析。' }}</pre></div></div>
-      <p>回放浏览不会向设备发送报文。丢包、清空缓冲和未完整落盘的数据均不能视为完整总线记录。</p></section>
-    </div>
-  </section>
+  <div class="ksu-grid">
+    <!-- 单根节点：CommunicationView 用 v-show 控制录制 / EtherCAT 两页签 -->
+    <section class="ksu-card ksu-span-2">
+      <div class="ksu-card-head">
+        <div>
+          <h2 class="ksu-card-title">统一通信录制</h2>
+          <p class="ksu-card-sub">保存应用实际收发的串口字节、EtherCAT 主站帧和模拟器事件；暂停曲线或切换页面不停止录制，未知协议原样保留</p>
+        </div>
+        <div class="ksu-card-actions">
+          <span class="ksu-pill" :class="status?.active ? 'ksu-pill--bad' : 'ksu-pill--muted'">{{ status?.active ? '正在录制' : '未录制' }}</span>
+          <button v-if="!status?.active" class="ksu-btn ksu-btn--primary ksu-btn--sm" :disabled="busy" @click="start">开始录制</button>
+          <button v-else class="ksu-btn ksu-btn--danger ksu-btn--sm" :disabled="busy || !status?.path" @click="stop">停止并落盘</button>
+        </div>
+      </div>
+      <div class="ksu-card-body">
+        <div v-if="error" class="ksu-banner ksu-banner--error" role="alert">
+          <div class="ksu-banner-body"><strong>录制操作失败</strong><span>{{ error }}</span></div>
+        </div>
+        <div v-if="notice" class="ksu-banner ksu-banner--info" role="status">
+          <div class="ksu-banner-body"><span>{{ notice }}</span></div>
+        </div>
+
+        <div class="ksu-form-grid">
+          <label class="ksu-field">
+            <span class="ksu-field-label">容量上限（MiB）</span>
+            <input class="ksu-input" v-model.number="limit" type="number" min="16" max="16384" />
+          </label>
+        </div>
+        <div class="ksu-grid">
+          <div class="ksu-stat">
+            <span class="ksu-stat-label">已接收</span>
+            <span class="ksu-stat-value ksu-display">{{ status?.accepted ?? 0 }}</span>
+            <span class="ksu-stat-sub">条消息</span>
+          </div>
+          <div class="ksu-stat">
+            <span class="ksu-stat-label">已写</span>
+            <span class="ksu-stat-value ksu-display">{{ status?.written ?? 0 }}</span>
+            <span class="ksu-stat-sub">已落盘</span>
+          </div>
+          <div class="ksu-stat">
+            <span class="ksu-stat-label">队列丢弃</span>
+            <span class="ksu-stat-value ksu-display">{{ status?.dropped ?? 0 }}</span>
+            <span class="ksu-stat-sub">缓冲溢出</span>
+          </div>
+          <div class="ksu-stat">
+            <span class="ksu-stat-label">未写入</span>
+            <span class="ksu-stat-value ksu-display">{{ status?.unwritten ?? 0 }}</span>
+            <span class="ksu-stat-sub">待落盘</span>
+          </div>
+        </div>
+        <p v-if="status?.path" class="ksu-hint">{{ status.path }}</p>
+        <div v-if="status?.error" class="ksu-banner ksu-banner--error" role="alert">
+          <div class="ksu-banner-body"><span>{{ status.error }}</span></div>
+        </div>
+        <div v-if="status?.armed" class="ksu-banner ksu-banner--info" role="status">
+          <div class="ksu-banner-body"><span>正在等待故障触发 · 故障前缓冲主动淘汰 {{ status.discarded ?? 0 }} 条</span></div>
+        </div>
+        <div v-if="status?.triggeredAtUs" class="ksu-banner ksu-banner--info" role="status">
+          <div class="ksu-banner-body"><span>已于 {{ time(status.triggeredAtUs) }} 触发{{ status.active ? '，正在保存故障后数据' : '，已停止' }} · 主动淘汰 {{ status.discarded ?? 0 }} 条</span></div>
+        </div>
+
+      </div>
+    </section>
+
+    <section class="ksu-card">
+      <div class="ksu-card-head">
+        <div>
+          <h2 class="ksu-card-title">故障触发录制</h2>
+          <p class="ksu-card-sub">默认由超时、校验错误、设备异常等失败事务触发一次，故障后自动停止</p>
+        </div>
+        <div class="ksu-card-actions">
+          <span class="ksu-pill" :class="triggerEnabled ? 'ksu-pill--warn' : 'ksu-pill--muted'">{{ triggerEnabled ? '已启用' : '未启用' }}</span>
+        </div>
+      </div>
+      <div class="ksu-card-body">
+        <div class="ksu-list">
+          <div class="ksu-row ksu-row--static">
+            <div class="ksu-row-body">
+              <span class="ksu-row-title">等待故障后保存</span>
+              <span class="ksu-row-sub">未触发便停止时，缓冲报文不保存</span>
+            </div>
+            <div class="ksu-row-control">
+              <button type="button" class="ksu-switch" role="switch" :aria-checked="triggerEnabled" :disabled="!!status?.active" aria-label="故障触发录制" @click="triggerEnabled = !triggerEnabled">
+                <span class="ksu-switch-knob"></span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="ksu-form-grid">
+          <label class="ksu-field">
+            <span class="ksu-field-label">故障前（秒）</span>
+            <input class="ksu-input" v-model.number="preSeconds" type="number" min="0" max="300" :disabled="!!status?.active" />
+          </label>
+          <label class="ksu-field">
+            <span class="ksu-field-label">故障后（秒）</span>
+            <input class="ksu-input" v-model.number="postSeconds" type="number" min="1" max="300" :disabled="!!status?.active" />
+          </label>
+          <label class="ksu-field">
+            <span class="ksu-field-label">事件关键词</span>
+            <input class="ksu-input" v-model="triggerKeyword" maxlength="256" :disabled="!!status?.active" placeholder="可选事件关键词；留空使用事务失败触发" aria-label="故障触发关键词" />
+          </label>
+        </div>
+        <p class="ksu-hint">故障前缓冲最多 16 MiB / 300 秒，超过限制的旧记录会被主动淘汰；配置变更始终保存。</p>
+      </div>
+    </section>
+
+    <section class="ksu-card">
+      <div class="ksu-card-head">
+        <div>
+          <h2 class="ksu-card-title">在线网卡捕获</h2>
+          <p class="ksu-card-sub">独立写入 PCAPNG，需要 Npcap；网卡仅能捕获所在位置可见的流量，使用主站网卡或实际 TAP / 镜像口</p>
+        </div>
+        <div class="ksu-card-actions">
+          <span class="ksu-pill" :class="capture?.active ? 'ksu-pill--bad' : 'ksu-pill--muted'">{{ capture?.active ? '捕获中' : '未捕获' }}</span>
+          <button v-if="!capture?.active" class="ksu-btn ksu-btn--primary ksu-btn--sm" :disabled="busy || !adapter" @click="action(async () => { capture = await invoke('start_network_capture', { adapter, ethercatOnly: onlyEthercat, limitMb: limit }); })">开始捕获</button>
+          <button v-else class="ksu-btn ksu-btn--danger ksu-btn--sm" :disabled="busy || !capture?.path" @click="action(async () => { capture = await invoke('stop_network_capture'); })">停止捕获</button>
+        </div>
+      </div>
+      <div class="ksu-card-body">
+        <div class="ksu-form-grid">
+          <label class="ksu-field">
+            <span class="ksu-field-label">捕获网卡</span>
+            <div class="inline-field">
+              <select class="ksu-select" v-model="adapter" :disabled="capture?.active">
+                <option value="">选择捕获网卡</option>
+                <option v-for="a in adapters" :key="a.name" :value="a.name">{{ a.description }}</option>
+              </select>
+              <button class="ksu-btn ksu-btn--sm" :disabled="busy" @click="action(async () => { adapters = await invoke('ethercat_adapters'); adapter = adapters[0]?.name ?? ''; })">刷新网卡</button>
+            </div>
+          </label>
+        </div>
+        <div class="ksu-list">
+          <div class="ksu-row ksu-row--static">
+            <div class="ksu-row-body">
+              <span class="ksu-row-title">仅 EtherCAT（含 VLAN）</span>
+              <span class="ksu-row-sub">捕获方向未知时不推断收发</span>
+            </div>
+            <div class="ksu-row-control">
+              <button type="button" class="ksu-switch" role="switch" :aria-checked="onlyEthercat" :disabled="capture?.active" aria-label="仅捕获 EtherCAT" @click="onlyEthercat = !onlyEthercat">
+                <span class="ksu-switch-knob"></span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="ksu-grid">
+          <div class="ksu-stat">
+            <span class="ksu-stat-label">已捕获帧</span>
+            <span class="ksu-stat-value ksu-display">{{ capture?.packets ?? 0 }}</span>
+            <span class="ksu-stat-sub">PCAPNG 写入</span>
+          </div>
+          <div class="ksu-stat">
+            <span class="ksu-stat-label">驱动丢包</span>
+            <span class="ksu-stat-value ksu-display">{{ capture?.driverDropped ?? '—' }}</span>
+            <span class="ksu-stat-sub">网卡层丢弃</span>
+          </div>
+        </div>
+        <p v-if="capture?.path" class="ksu-hint">{{ capture.path }}</p>
+        <div v-if="capture?.error" class="ksu-banner ksu-banner--error" role="alert">
+          <div class="ksu-banner-body"><span>{{ capture.error }}</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="ksu-card ksu-span-2">
+      <div class="ksu-card-head">
+        <div>
+          <h2 class="ksu-card-title">录制会话与来源</h2>
+          <p class="ksu-card-sub">打开历史会话、目录或 PCAP 分卷；回放浏览不会向设备发送报文</p>
+        </div>
+        <div class="ksu-card-actions">
+          <button class="ksu-btn ksu-btn--sm" :disabled="busy || !path || fileMode" :aria-pressed="follow" @click="toggleFollow">{{ follow ? '暂停跟随' : '跟随最新报文' }}</button>
+        </div>
+      </div>
+      <div class="ksu-card-body">
+        <RecordingLibrary :path="path" :file-mode="fileMode" :sessions="sessions" @open="openSession" />
+        <div class="ksu-list">
+          <div class="ksu-row ksu-row--static">
+            <div class="ksu-row-body">
+              <span class="ksu-row-title">PCAP / PCAPNG 文件或分卷目录</span>
+              <span class="ksu-row-sub">开启后按文件模式检索全部分卷</span>
+            </div>
+            <div class="ksu-row-control">
+              <button type="button" class="ksu-switch" role="switch" :aria-checked="fileMode" aria-label="PCAP 文件模式" @click="fileMode = !fileMode">
+                <span class="ksu-switch-knob"></span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="inline-field">
+          <input class="ksu-input" v-model="path" :placeholder="fileMode ? '输入 PCAP / PCAPNG 文件完整路径' : '录制会话目录完整路径'" aria-label="录制或捕获路径" />
+          <button class="ksu-btn ksu-btn--sm" :disabled="busy || pageBusy || !path" @click="page(0)">{{ pageBusy ? '检索中…' : '打开 / 刷新' }}</button>
+        </div>
+        <div class="ksu-list">
+          <div class="ksu-row ksu-row--static">
+            <div class="ksu-row-body">
+              <span class="ksu-row-title">导出以太网 PCAPNG</span>
+              <span class="ksu-row-sub">仅导出可用以太网帧；录制中不可导出</span>
+            </div>
+            <div class="ksu-row-control">
+              <button class="ksu-btn ksu-btn--sm" :disabled="busy || !path || fileMode || status?.active" @click="exportPcap">导出</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="ksu-card ksu-span-2">
+      <div class="ksu-card-head">
+        <div>
+          <h2 class="ksu-card-title">筛选与检索</h2>
+          <p class="ksu-card-sub">全部筛选作用于整个会话；站号、地址和结果关联完整事务</p>
+        </div>
+        <div class="ksu-card-actions">
+          <button class="ksu-btn ksu-btn--sm" @click="clearFilters">清除筛选</button>
+        </div>
+      </div>
+      <div class="ksu-card-body">
+        <div class="ksu-form-grid">
+          <label class="ksu-field">
+            <span class="ksu-field-label">报文筛选</span>
+            <input class="ksu-input" v-model="query" :placeholder="fileMode ? '全部 PCAP 分卷搜索：来源、协议、事件、字节' : '全会话搜索：来源、协议、事务、事件、十六进制字节'" aria-label="报文筛选" />
+          </label>
+          <label class="ksu-field">
+            <span class="ksu-field-label">方向</span>
+            <select class="ksu-select" v-model="direction" aria-label="方向筛选">
+              <option value="">所有方向</option>
+              <option>tx</option>
+              <option>rx</option>
+              <option>event</option>
+              <option>unknown</option>
+            </select>
+          </label>
+        </div>
+        <div class="button-row">
+          <button class="ksu-btn ksu-btn--sm" :disabled="busy || pageBusy || offset === 0" @click="page(Math.max(0, offset - 100))">上一页</button>
+          <button class="ksu-btn ksu-btn--sm" :disabled="busy || pageBusy || next === null" @click="page(next!)">下一页</button>
+          <span class="ksu-hint">{{ total === null ? '本页 ' + rows.length + ' 条' : '共 ' + total + ' 条匹配 · ' + (rows.length ? offset + 1 : 0) + '–' + (offset + rows.length) }}{{ follow ? ' · 自动跟随中' : '' }}</span>
+        </div>
+
+        <details class="ksu-field" open>
+          <summary class="ksu-field-label">时间与协议精确筛选</summary>
+          <div class="ksu-form-grid">
+            <label class="ksu-field">
+              <span class="ksu-field-label">开始</span>
+              <input class="ksu-input" v-model="fromTime" type="datetime-local" step="0.001" />
+            </label>
+            <label class="ksu-field">
+              <span class="ksu-field-label">结束</span>
+              <input class="ksu-input" v-model="toTime" type="datetime-local" step="0.001" />
+            </label>
+            <label class="ksu-field">
+              <span class="ksu-field-label">来源精确匹配</span>
+              <input class="ksu-input" v-model="sourceFilter" placeholder="来源精确匹配（可从报文复制）" aria-label="来源筛选" />
+            </label>
+            <label class="ksu-field">
+              <span class="ksu-field-label">协议</span>
+              <input class="ksu-input" v-model="protocolFilter" placeholder="协议，如 modbus-rtu / ethernet" aria-label="协议筛选" />
+            </label>
+          </div>
+          <div v-if="!fileMode" class="ksu-form-grid">
+            <label class="ksu-field">
+              <span class="ksu-field-label">站号</span>
+              <input class="ksu-input" v-model="slaveFilter" placeholder="站号" aria-label="站号筛选" />
+            </label>
+            <label class="ksu-field">
+              <span class="ksu-field-label">功能码</span>
+              <input class="ksu-input" v-model="functionFilter" placeholder="功能码，如 3 / 0x06" aria-label="功能码筛选" />
+            </label>
+            <label class="ksu-field">
+              <span class="ksu-field-label">寄存器地址</span>
+              <input class="ksu-input" v-model="addressFilter" placeholder="包含寄存器地址，如 0x100" aria-label="地址筛选" />
+            </label>
+            <label class="ksu-field">
+              <span class="ksu-field-label">事务结果</span>
+              <select class="ksu-select" v-model="outcomeFilter" aria-label="事务结果筛选">
+                <option value="">所有事务结果</option>
+                <option value="success">成功</option>
+                <option value="failure">失败 / 设备异常</option>
+                <option value="incomplete">缺少事务结束</option>
+              </select>
+            </label>
+          </div>
+        </details>
+        <p class="ksu-hint">{{ fileMode ? '搜索与时间筛选覆盖所选文件或目录中的全部 PCAP 分卷。首次建立缓存可能较慢；源文件变化后重建，请优先打开已停止的捕获。' : '全部筛选作用于整个会话；站号、地址和结果关联完整事务。跟随显示最新 100 条已落盘匹配记录，查看详情时录制继续。' }}</p>
+      </div>
+    </section>
+
+    <section class="ksu-card">
+      <div class="ksu-card-head">
+        <div>
+          <h2 class="ksu-card-title">邮箱 / PDO 解析映射</h2>
+          <p class="ksu-card-sub">历史录制优先使用报文当时保存的映射；旧会话或外部 PCAP 没有映射时使用此处手动配置</p>
+        </div>
+        <div class="ksu-card-actions">
+          <label class="ksu-btn ksu-btn--sm">
+            导入 JSON
+            <input type="file" hidden accept=".json" @change="importMap" />
+          </label>
+        </div>
+      </div>
+      <div class="ksu-card-body">
+        <button class="ksu-btn ksu-btn--tonal" :disabled="busy" @click="saveMapping">保存映射到录制上下文</button>
+        <label class="ksu-field">
+          <span class="ksu-field-label">解析映射 JSON</span>
+          <textarea class="ksu-textarea" v-model="mapping" rows="7" aria-label="解析映射 JSON" />
+        </label>
+        <p class="ksu-hint">PDO 字段必须来自实际工程定义。</p>
+      </div>
+    </section>
+
+    <RecordingHistory :path="path" :file-mode="fileMode" :from-us="fromUs" :to-us="toUs" @select="locatePoint" />
+
+    <section class="ksu-card ksu-span-full">
+      <div class="ksu-card-head">
+        <div>
+          <h2 class="ksu-card-title">报文列表</h2>
+          <p class="ksu-card-sub">丢包、清空缓冲和未完整落盘的数据均不能视为完整总线记录 · {{ total === null ? '本页 ' + visible.length + ' 条' : '共 ' + total + ' 条匹配' }}</p>
+        </div>
+        <div class="ksu-card-actions">
+          <span v-if="follow" class="ksu-pill ksu-pill--ok">自动跟随</span>
+          <span v-if="pageBusy" class="ksu-pill ksu-pill--warn">检索中</span>
+        </div>
+      </div>
+      <div v-if="browseError" class="ksu-banner ksu-banner--error" role="alert">
+        <div class="ksu-banner-body"><span>{{ browseError }}</span></div>
+      </div>
+      <div v-if="pageWarning" class="ksu-banner ksu-banner--info" role="status">
+        <div class="ksu-banner-body"><span>{{ pageWarning }}</span></div>
+      </div>
+      <div ref="recordTable" class="ksu-list" @wheel.passive="pauseFollow" @focusin="pauseFollow">
+        <button
+          v-for="r in visible" :key="r.sequence" type="button" class="ksu-row"
+          :aria-current="selected === r ? 'true' : undefined" @click="details(r)"
+        >
+          <div class="ksu-row-body">
+            <span class="ksu-row-title mono">#{{ r.sequence }} · {{ r.source }}</span>
+            <span class="ksu-row-sub">{{ time(r.timestampUs) }} · {{ r.protocol }} · {{ r.direction }} / 事务 {{ r.transaction || '—' }}</span>
+            <span class="ksu-row-sub">{{ r.bytes.length }} 字节 · {{ r.detail }}</span>
+          </div>
+          <span class="ksu-row-chevron" aria-hidden="true">›</span>
+        </button>
+        <div v-if="!visible.length" class="ksu-empty">{{ pageBusy ? '正在建立索引或检索报文…' : '没有匹配的报文。打开会话、清除筛选或开启跟随查看新记录。' }}</div>
+      </div>
+    </section>
+
+
+
+    <section v-if="detailBusy" class="ksu-card ksu-span-full">
+      <div class="ksu-card-body"><p class="ksu-hint" role="status">正在关联完整事务…</p></div>
+    </section>
+
+    <section v-if="modbusDetail" class="ksu-card ksu-span-full">
+      <div class="ksu-card-head">
+        <div>
+          <h3 class="ksu-card-title">Modbus 事务 #{{ modbusDetail.transaction }} · {{ modbusDetail.outcome }}</h3>
+          <p class="ksu-card-sub">{{ modbusDetail.source }} · {{ modbusDetail.protocol }} · 应用观测耗时 {{ modbusDetail.durationUs === null ? '未知' : modbusDetail.durationUs + ' μs' }}（不是线缆传输时间）</p>
+        </div>
+      </div>
+      <div class="ksu-card-body">
+        <div v-if="modbusDetail.warning" class="ksu-banner ksu-banner--info"><div class="ksu-banner-body"><span>{{ modbusDetail.warning }}</span></div></div>
+        <div class="ksu-form-grid">
+          <div v-for="(frame, i) in [modbusDetail.request, modbusDetail.response]" :key="i" class="ksu-field">
+            <span class="ksu-field-label">{{ i ? '响应' : '请求' }} · {{ frame.checksum }}</span>
+            <p class="ksu-hint">站号 {{ frame.slave ?? '—' }} · 功能码 {{ frame.function === null ? '—' : '0x' + frame.function.toString(16).toUpperCase() }} · 起始地址 {{ frame.address === null ? '—' : '0x' + frame.address.toString(16).toUpperCase() }} · 数量 {{ frame.count ?? '—' }}</p>
+            <p v-if="frame.error" class="ksu-hint" role="alert">{{ frame.error }}</p>
+            <p v-if="frame.exception" class="ksu-hint" role="alert">{{ frame.exception }}</p>
+            <pre class="mono">{{ frame.hex || '未记录字节' }}</pre>
+            <p v-if="frame.values.length" class="ksu-hint">原始寄存器值（未按设备 Profile 缩放）</p>
+            <pre v-if="frame.values.length" class="mono">{{ frame.values.join(', ') }}</pre>
+          </div>
+        </div>
+        <details class="ksu-field">
+          <summary class="ksu-field-label">事务事件（包含部分收发、清空与结束结果）</summary>
+          <pre class="mono">{{ modbusDetail.events.join('\n') || '无事件' }}</pre>
+        </details>
+      </div>
+    </section>
+
+    <section v-if="selected && !modbusDetail && !detailBusy" class="ksu-card ksu-span-full">
+      <div class="ksu-card-head">
+        <div>
+          <h3 class="ksu-card-title">记录 #{{ selected.sequence }} 原始内容</h3>
+          <p class="ksu-card-sub">{{ selected.source }} · {{ selected.protocol }} · {{ time(selected.timestampUs) }}</p>
+        </div>
+      </div>
+      <div class="ksu-card-body">
+        <div class="ksu-form-grid">
+          <div class="ksu-field">
+            <span class="ksu-field-label">原始字节</span>
+            <pre class="mono">{{ hex(selected.bytes) || '无字节，只有事件' }}</pre>
+          </div>
+          <div class="ksu-field">
+            <span class="ksu-field-label">标准字段解析</span>
+            <pre class="mono">{{ decoded ? JSON.stringify(decoded, null, 2) : '该记录保留原始内容；没有可用的结构化协议解析。' }}</pre>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
 </template>
-
-<style scoped>
-
-label{display:inline-flex;flex-direction:row;align-items:center;gap:6px}input[type=checkbox]{width:16px;height:16px;min-height:16px;margin:0}input[type=file]{max-width:260px;height:auto}
-.workbench{padding:18px;margin-bottom:14px;display:grid;gap:14px}.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.recording-grid{display:grid;gap:12px}h3{font-size:var(--sa-text-14);margin:0}p{font-size:var(--sa-text-12);color:var(--muted)}.error{color:var(--red)}.notice{color:var(--green)}input[type=number]{width:100px}.path{overflow-wrap:anywhere}.path-input{flex:1 1 280px;min-width:0}select{max-width:650px}details{padding:12px;border:1px solid var(--line)}summary{cursor:pointer;margin-bottom:8px}textarea{width:100%;background:var(--sa-bg-sunken);color:var(--info);border:1px solid var(--line);margin-top:8px}.table-scroll{max-height:440px;overflow:auto}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:8px;border-bottom:1px solid var(--line);font-size:var(--sa-text-12);max-width:400px;overflow-wrap:anywhere}tbody tr{cursor:pointer}tbody tr:hover,.chosen{background:var(--sa-accent-soft)}.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;min-width:0}.detail-grid>div{min-width:0}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:500px;overflow:auto;background:var(--sa-bg-sunken);padding:12px;font-size:var(--sa-text-12)}
-
-.workbench { margin: 0; padding: 24px; }
-.workbench-tabs { padding-bottom: 16px; border-bottom: 1px solid var(--line); }
-.workbench-tabs h2 { margin-right: auto; }
-.recording-section { display: grid; gap: 12px; min-width: 0; }
-.recording-section + .recording-section { padding-top: 24px; margin-top: 8px; border-top: 1px solid var(--line); }
-.controls > input:not([type=number]), .controls > select { flex: 1 1 220px; width: auto; min-width: 0; }
-.controls > button { flex-shrink: 0; }
-.table-scroll > p { padding: 40px 16px; text-align: center; border: 1px dashed var(--line); }
-@media(max-width:640px) { .workbench { padding: 16px; } .detail-grid { grid-template-columns: 1fr; } .controls > label { flex-wrap: wrap; } }
-.recording-warning { color: var(--warning); overflow-wrap: anywhere; }
-.modbus-transaction { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--line); min-width: 0; }
-.detail-grid > article { min-width: 0; }
-tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.time-filters > label { flex: 1 1 240px; flex-direction: column; align-items: flex-start; min-width: 0; }
-.time-filters input[type=datetime-local] { width: 100%; min-width: 0; }
-.recording-section details > .controls + .controls { margin-top: 10px; }
-</style>

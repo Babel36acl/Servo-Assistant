@@ -22,3 +22,11 @@
 - 本机缺 glib 系统库，`cargo test`/`clippy` 走 CI Windows；两提交已推：`2a95645`（deps）、`2193c2f`（repo）
 - 遗留：styles.css 64 裸字号 + 间距 px（P5 统一收）；`tauri dev` 实机验拖拽/最大化；平板 1024 真机验抽屉 + 44 触控
 - 验证：每阶段 `pnpm build`，P4 起加 `pnpm test` + `cargo test --manifest-path src-tauri/Cargo.toml` + clippy `-D warnings`
+## 2026-10-30（方向修正：FlClash Windows 视觉体系）
+- 用户否定 VSCode 四区壳与 KSU-Miuix 复刻两版，指定「抄 FlClash（chen08209/FlClash）的 WIN 方案」：同属 KSU 视觉体系、现成 Windows 实现
+- 规格：`docs/flclash-win-spec.md` + `docs/reference/flclash-windows-dashboard.png`（本机 FlClash v0.9.2 实拍取色）；KSU 调研文档 `docs/ksu-ui-spec.md` 标注为历史参考
+- 令牌重写：深色「纯黑页 #000 / 卡 #191A1C / 块 #252528 / 内嵌 #2F3134」四级表面，主色 #2F83FF、成功 #30D158、警告 #FF9F0A、错误 #FF453A；浅色 #ECEDF9/#F9F9FF/#E6E8F3；Apple Dynamic Type 字阶全部 token 化并支持 90/100/110% 缩放
+- 壳重写：36px 自绘拖拽条 + 右上窗口按钮（关闭失败根因 `core:window:default` 不含写权限，已补 allow-close/minimize/maximize/unmaximize/toggle-maximize/start-dragging/set-focus/is-maximized/set-title）；左侧 48px 图标栏可展开 220px（仿 FlClash NavigationSidebar）；删除应用栏/命令面板/状态栏；窄屏 <840 收 5 项底栏
+- 视图：7 页全部 FlClash 卡片仪表盘化（`.ksu-grid/.ksu-span-*/.ksu-stat/.ksu-display/.ksu-columns`），连接页双列、诊断双列、监控 6 指标卡 + 全宽曲线、表格改行卡、全局横幅改右下 toast
+- 设置页：主题模式 深/浅/跟随系统、侧栏展开、悬浮底栏、字号缩放 90/100/110%；关于信息
+- 验证：`pnpm lint:tokens` / `pnpm build`（vue-tsc 0 错）/ `pnpm test` 23/23 全绿；Edge 无头截图覆盖 1440×900 七页深色、浅色、800×1100 底栏；`cargo build` 仍卡在 native/bridge.c 的 cl.exe（本机 MSVC/依赖头问题，非本次改动），Tauri 实机点击关闭待 `pnpm tauri dev` 验
