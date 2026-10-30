@@ -1,13 +1,29 @@
-统一设备配置导入记录的界面提示，保持设备配置和原始审计数据完整。
+# 发布说明
 
-- “操作证据”中的成功配置导入记录统一显示“设备配置已导入”，已有历史记录同样使用此提示。
-- 导入失败原因和其他操作详情继续正常显示；原始审计数据与用户导入的 JSON Profile 保持原样。
-- 快照导出测试示例改用中性的设备标识，不影响参数快照格式和导出行为。
+本文件会被 `Release` 工作流用作 GitHub Release 说明。**打 `vX.Y.Z` 标签前请更新本文件**，并保持与标签版本一致。
 
-本地验证：前端 23 项测试通过，类型检查和生产构建通过；Rust 60 项测试通过，1 个崩溃恢复子进程测试入口按项目设置忽略。操作记录模板渲染验证通过，三份本地 JSON 配置的内容哈希均未变化。
+## 本版内容（待发布）
 
-Windows：安装版 EXE / MSI，或解压即用的便携 ZIP。Linux：DEB、RPM、AppImage（均为 x64）。便携版升级时请保留程序旁的 data 文件夹；Windows 便携版需要 WebView2 Runtime。
+- 连接方式菜单改为模拟器 / 串口 / Modbus TCP / EtherCAT 四选一；TCP 使用 MBAP + FC03/FC06，EtherCAT 复用 PRE-OP 主站接管流程。
+- 自动查找支持多选搜索波特率与会话级扩展波特率；只读寄存器扫描支持串口与 TCP，可导出 CSV。
+- EtherCAT 新增从站只读诊断：AL 状态、活动端口/拓扑、DC、ESC 0x0300..0x0311 原始错误计数。
+- EtherCAT 新增在线对象字典发现：SDO Info 只读读取，生成整数对象 Profile（512 上限）。
+- 文档新增扩展路线图，并同步 Profile、EtherCAT 与界面说明。
 
-在线 EtherCAT 需要安装 Npcap；当前监控为非实时 SDO 轮询，不含运动控制。
-暂无设备，实机长时间录制、真实磁盘满/断电与独立抓包对照尚未验收。子进程强退恢复测试不等同于物理断电验证。
-历史曲线重建完整成功的 Modbus FC03 事务或模拟器状态采样，不补造丢失数据；外部 PCAP 暂不重建 EtherCAT 过程数据曲线。
+## 验证
+
+- 前端：`pnpm lint:tokens`、`pnpm build`、`pnpm test`（25 项）通过。
+- Rust：`cargo test --lib` 71 项通过（1 项崩溃恢复子进程入口按设置忽略）；`cargo clippy -- -D warnings` 通过。
+- **EtherCAT 未在真实从站上验收**：诊断、对象字典与 SDO 读写目前只有代码/ABI/模拟验证；首次实机必须独占总线并先做只读操作。
+
+## 安装包
+
+- Windows：MSI、NSIS 安装 EXE，或解压即用的便携 ZIP（需要 WebView2 Runtime）。
+- Linux x64：DEB（Debian 12+）、RPM（Fedora）、AppImage（Arch 等）。
+- 在线 EtherCAT 需要单独安装 Npcap 并重启应用。
+
+## 已知边界
+
+- 主站仅 PRE-OP：不进入 OP、不使能伺服、不发送周期运动输出。
+- 不提供恢复出厂值、自动调参、EEPROM 写入或 FoE 固件升级。
+- 自动化测试与模拟器只验证软件契约，不代表任何具体设备的兼容性。

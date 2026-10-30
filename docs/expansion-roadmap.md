@@ -190,6 +190,7 @@ cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 - **P0 对象字典已落地（2026-10-30）**：SDO Info 只读读取在线对象字典，生成整数对象 Profile；跳过浮点/字符串/位域，512 对象上限，读取失败与截断在界面提示。实现见 `bridge.c`、`master.rs`、`EthercatMasterView.vue`。
 - 后续候选：站号结果列表/多设备枚举、扫描结果生成 Profile 草稿、FC16/FC23、Profile 编辑器（见 4.4）。
 - P0 剩余：ESI 导入；P1/P2 的 PDO/调谐仍按原优先级评估。
+- **EtherCAT 未实机验收**：截至 2026-10-30 没有可用的真实从站；主站、诊断、对象字典与 SDO 读写目前只有代码/ABI/模拟测试，首次实机必须独占总线并先做只读操作。
 
 ## 9. 本轮验证（2026-10-30）
 

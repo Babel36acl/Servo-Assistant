@@ -9,7 +9,8 @@ labels:
 
 - 版本（`设置` 里或 `git describe`）：
 - 系统：Windows / Debian 12 / Fedora / Arch：
-- 连接方式：模拟器 / 真实串口（型号可省略，只写现象）：
+- 连接方式：模拟器 / Modbus 串口 / Modbus TCP / EtherCAT：
+- 设备与 Profile（型号可省略；请勿粘贴厂商手册原文）：
 
 ## 复现步骤
 
