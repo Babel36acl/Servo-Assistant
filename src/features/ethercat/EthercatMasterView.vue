@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted } from 'vue';
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { CHART_COLORS } from '../../styles/chart-palette';
 import ScopeChart from '../../components/ScopeChart.vue';
@@ -36,6 +36,7 @@ async function write(o: ObjectDef) { await action(async () => {
 function selectSlave() { values.value = {}; drafts.value = {}; history.value = {}; }
 function stateName(state: number) { const base = ({ 1: 'INIT', 2: 'PRE-OP', 3: 'BOOT', 4: 'SAFE-OP', 8: 'OP' } as Record<number, string>)[state & 15] ?? '未知'; return `${base}${state & 16 ? ' + ERROR' : ''}`; }
 function useMailboxes() { emit('mapping', { mailboxes: status.value.slaves.flatMap(s => [s.mailboxOut, s.mailboxIn].filter(Boolean).map(offset => ({ station: s.station, offset }))) }); }
+const chartSeries = computed(() => selection.value.map((id, i) => ({ id, name: profile.value!.objects.find(o => o.id === id)?.name ?? id, unit: profile.value!.objects.find(o => o.id === id)?.unit ?? '', color: CHART_COLORS[i % CHART_COLORS.length], values: history.value[id] ?? [] })));
 async function tick() {
   if (disposed) return;
   if (polling.value && status.value.connected && !busy.value) {
@@ -78,7 +79,7 @@ onUnmounted(() => { disposed = true; polling.value = false; clearTimeout(timer);
       <tr v-for="o in profile.objects" :key="o.id"><td><input v-model="selection" type="checkbox" :value="o.id" :disabled="!selection.includes(o.id) && selection.length >= 6" /></td><td>{{ o.name }}<br /><code>0x{{ o.index.toString(16) }}:{{ o.subIndex }} · {{ o.id }}</code></td><td>{{ values[o.id]?.raw ?? '未读取 / 已过期' }}<br />{{ values[o.id]?.value ?? '—' }} {{ o.unit }}</td><td><input v-model="drafts[o.id]" :disabled="!o.writable || busy" :aria-label="`${o.name} 待写值`" /><small>{{ o.min }} … {{ o.max }}</small></td><td><button :disabled="busy || !status.connected" @click="action(async () => { await read(o.id); })">读取</button><button v-if="o.writable" :disabled="busy || !status.connected || !values[o.id]" @click="write(o)">写入并回读</button></td></tr>
     </tbody></table></div>
     <label v-if="profile">写入确认 <input v-model="confirmWrite" placeholder="写入 对象ID" :disabled="busy" /></label>
-    <ScopeChart v-if="profile && selection.length" :series="selection.map((id, i) => ({ id, name: profile!.objects.find(o => o.id === id)?.name ?? id, unit: profile!.objects.find(o => o.id === id)?.unit ?? '', color: CHART_COLORS[i % CHART_COLORS.length], values: history[id] ?? [] }))" />
+    <ScopeChart v-if="profile && selection.length" :series="chartSeries" />
     <p>监控是非实时 SDO 轮询；原始整数保留精度，工程值使用浮点显示。不提供 OP、伺服使能或周期运动输出。</p>
   </section>
 </template>

@@ -18,6 +18,8 @@ const {
   confirmField, closeConfirm, busy, cancelDiscovery, connected, disconnect,
   refreshPorts, readAll,
 } = useServo();
+// confirmField 只在模板里以 ref="confirmField" 形式绑定（确认框输入聚焦），这里显式读一次，免得被判未使用。
+void confirmField;
 
 const paletteOpen = ref(false);
 
