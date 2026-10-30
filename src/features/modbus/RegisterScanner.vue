@@ -4,7 +4,7 @@ import { servoApi } from "../../api";
 import type { ScanStatus } from "../../types";
 import { useServo } from "../../composables/useServo";
 
-const { allowUnsupportedBaud, baudRate, busy, connected, hex, parity, portName, protocol, showError, slaveId, stopBits, timeoutMs } = useServo();
+const { allowUnsupportedBaud, baudRate, busy, connected, connectionMode, hex, host, parity, port, portName, protocol, showError, slaveId, stopBits, timeoutMs } = useServo();
 const startAddress = ref(0);
 const endAddress = ref(255);
 const blockSize = ref(16);
@@ -19,7 +19,12 @@ let disposed = false;
 const span = computed(() => Number(endAddress.value) - Number(startAddress.value) + 1);
 const shownValues = computed(() => (status.value?.values ?? []).slice(0, 300));
 const progress = computed(() => status.value ? `${status.value.completed}/${status.value.total} 块` : "");
-const canStart = computed(() => !scanning.value && !busy.value && !connected.value && !!portName.value && span.value > 0 && span.value <= 4096);
+const endpointReady = computed(() => connectionMode.value === "serial"
+  ? !!portName.value
+  : connectionMode.value === "tcp"
+    ? !!host.value.trim() && Number.isInteger(port.value) && port.value >= 1 && port.value <= 65535
+    : false);
+const canStart = computed(() => !scanning.value && !busy.value && !connected.value && endpointReady.value && span.value > 0 && span.value <= 4096);
 
 async function poll() {
   if (disposed || !scanning.value) return;
@@ -33,7 +38,12 @@ async function start() {
     error.value = "地址须为 0..65535 且起始不大于结束，单次最多 4096 个地址，每块 1..100 个寄存器";
     return;
   }
-  if (!portName.value) { error.value = "请先在连接参数中选择串口"; return; }
+  if (connectionMode.value !== "serial" && connectionMode.value !== "tcp") {
+    error.value = "寄存器扫描仅支持串口或 Modbus TCP";
+    return;
+  }
+  if (connectionMode.value === "serial" && !portName.value) { error.value = "请先在连接参数中选择串口"; return; }
+  if (connectionMode.value === "tcp" && !endpointReady.value) { error.value = "请先在连接参数中填写 Modbus TCP 主机与端口"; return; }
   error.value = "";
   status.value = null;
   scanning.value = true;
@@ -44,8 +54,10 @@ async function start() {
       connection: {
         protocol: protocol.value,
         preset: "profile",
-        mode: "serial",
-        portName: portName.value,
+        mode: connectionMode.value,
+        portName: connectionMode.value === "serial" ? portName.value : "",
+        host: connectionMode.value === "tcp" ? host.value.trim() : null,
+        port: connectionMode.value === "tcp" ? port.value : null,
         slaveId: slaveId.value,
         baudRate: baudRate.value,
         allowUnsupportedBaud: allowUnsupportedBaud.value,
@@ -123,7 +135,7 @@ onUnmounted(() => {
       </div>
       <p class="ksu-hint">
         {{ hex(Number(startAddress)) }} – {{ hex(Number(endAddress)) }} · 共 {{ span }} 个地址 ·
-        单次上限 4096 个 · 串口 {{ portName || '未选择' }} · 站号 {{ slaveId }}
+        单次上限 4096 个 · {{ connectionMode === 'serial' ? `串口 ${portName || '未选择'}` : connectionMode === 'tcp' ? `TCP ${host}:${port}` : '请选择串口或 TCP' }} · 站号 {{ slaveId }}
       </p>
       <div class="ksu-list">
         <div class="ksu-row ksu-row--static">
@@ -138,8 +150,8 @@ onUnmounted(() => {
           </div>
         </div>
       </div>
-      <p v-if="connected" class="ksu-hint">设备已连接。扫描需要独占串口，请先在“设备与连接”中断开。</p>
-      <p v-else-if="!portName" class="ksu-hint">请先在“连接参数”中选择串口。</p>
+      <p v-if="connected" class="ksu-hint">设备已连接。扫描需要独占链路，请先在“设备与连接”中断开。</p>
+      <p v-else-if="!endpointReady" class="ksu-hint">请在“连接参数”中选择串口或填写 Modbus TCP 主机与端口。</p>
       <div class="button-row">
         <button class="ksu-btn ksu-btn--primary" :disabled="!canStart" @click="start">开始扫描</button>
         <button v-if="scanning" class="ksu-btn" :disabled="cancelling" @click="cancel">{{ cancelling ? '正在取消' : '取消扫描' }}</button>

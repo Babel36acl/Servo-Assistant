@@ -7,8 +7,9 @@ import type {
   DiscoveryStatus,
   ProbeResult,
   ScanStatus,
+  EthercatStatus,
   BatchWriteResult,
-  ConnectionMode,
+  ModbusConnectionMode,
   ConnectionStatus,
   ParameterValue,
   OperationResult,
@@ -23,14 +24,14 @@ import type {
 
 export const servoApi = {
   discover(request: {
-    connection: { protocol: SerialProtocol; preset: ConnectionPreset; mode: ConnectionMode; portName: string; slaveId: number; baudRate: number; parity: Parity; stopBits: number; timeoutMs: number; allowUnsupportedBaud?: boolean };
+    connection: { protocol: SerialProtocol; preset: ConnectionPreset; mode: ModbusConnectionMode; portName: string; host?: string | null; port?: number | null; slaveId: number; baudRate: number; parity: Parity; stopBits: number; timeoutMs: number; allowUnsupportedBaud?: boolean };
     startSlave: number; endSlave: number;
     baudRates?: number[];
   }) { return invoke<DiscoveryStatus>("discover_device", { request }); },
   discoveryStatus() { return invoke<DiscoveryStatus>("get_discovery_status"); },
   cancelDiscovery() { return invoke<void>("cancel_discovery"); },
   scanRegisters(request: {
-    connection: { protocol: SerialProtocol; preset: ConnectionPreset; mode: ConnectionMode; portName: string; slaveId: number; baudRate: number; parity: Parity; stopBits: number; timeoutMs: number; allowUnsupportedBaud?: boolean };
+    connection: { protocol: SerialProtocol; preset: ConnectionPreset; mode: ModbusConnectionMode; portName: string; host?: string | null; port?: number | null; slaveId: number; baudRate: number; parity: Parity; stopBits: number; timeoutMs: number; allowUnsupportedBaud?: boolean };
     startAddress: number; endAddress: number; blockSize: number; includeZero: boolean;
   }) { return invoke<ScanStatus>("scan_registers", { request }); },
   registerScanStatus() { return invoke<ScanStatus>("register_scan_status"); },
@@ -54,8 +55,10 @@ export const servoApi = {
   connect(request: {
     protocol: SerialProtocol;
     preset: ConnectionPreset;
-    mode: ConnectionMode;
+    mode: ModbusConnectionMode;
     portName: string | null;
+    host?: string | null;
+    port?: number | null;
     slaveId: number;
     baudRate: number;
     allowUnsupportedBaud?: boolean;
@@ -64,6 +67,18 @@ export const servoApi = {
     timeoutMs: number;
   }) {
     return invoke<ConnectionStatus>("connect_device", { request });
+  },
+  ethercatAdapters() {
+    return invoke<Array<{ name: string; description: string }>>("ethercat_adapters");
+  },
+  ethercatConnect(adapter: string, confirmation: string) {
+    return invoke<EthercatStatus>("ethercat_connect", { adapter, confirmation });
+  },
+  ethercatDisconnect() {
+    return invoke<void>("ethercat_disconnect");
+  },
+  ethercatStatus(refresh: boolean) {
+    return invoke<EthercatStatus>("ethercat_status", { refresh });
   },
   disconnect() {
     return invoke<ConnectionStatus>("disconnect_device");

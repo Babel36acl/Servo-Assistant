@@ -1,7 +1,12 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import { useServo } from "../composables/useServo";
 import RegisterScanner from "../features/modbus/RegisterScanner.vue";
-const { activePage, allowUnsupportedBaud, baudRate, baudRates, busy, cancelDiscovery, connect, connected, connectionBlockedReason, connectionMode, disconnect, discoverConnection, discovery, discoveryActive, discoveryBaudRates, discoveryEnd, discoveryMessage, discoveryStart, discoveryTimeout, handleProfileFile, parity, portName, ports, profile, protocol, refreshPorts, selectAllDiscoveryBaudRates, serialModeLabel, slaveId, stationMax, stopBits, summary, timeoutMs, toggleDiscoveryBaud } = useServo();
+import EthercatConnectCard from "../features/ethercat/EthercatConnectCard.vue";
+const { activePage, allowUnsupportedBaud, baudRate, baudRates, busy, cancelDiscovery, connect, connected, connectionBlockedReason, connectionMode, disconnect, discoverConnection, discovery, discoveryActive, discoveryBaudRates, discoveryEnd, discoveryMessage, discoveryStart, discoveryTimeout, ethercatConnected, handleProfileFile, host, parity, port, portName, ports, profile, protocol, refreshPorts, selectAllDiscoveryBaudRates, serialModeLabel, slaveId, stationMax, stopBits, summary, timeoutMs, toggleDiscoveryBaud } = useServo();
+const modeLabels = { simulator: "配置模拟器", serial: "真实串口", tcp: "Modbus TCP", ethercat: "EtherCAT" } as const;
+const modeLabel = computed(() => modeLabels[connectionMode.value]);
+const modbusMode = computed(() => connectionMode.value !== "ethercat");
 </script>
 
 <template>
@@ -23,10 +28,12 @@ const { activePage, allowUnsupportedBaud, baudRate, baudRates, busy, cancelDisco
         <div class="ksu-card-head">
           <div>
             <h2 class="ksu-card-title">设备状态</h2>
-              <p class="ksu-card-sub">模拟器演练或真实 Modbus 串口会话</p>
+              <p class="ksu-card-sub">模拟器演练、Modbus 串口 / TCP，或 EtherCAT 主站</p>
             </div>
             <div class="ksu-card-actions">
-              <span class="ksu-pill" :class="connected ? 'ksu-pill--ok' : 'ksu-pill--muted'">{{ connected ? '已连接' : '未连接' }}</span>
+              <span class="ksu-pill" :class="connected || (connectionMode === 'ethercat' && ethercatConnected) ? 'ksu-pill--ok' : 'ksu-pill--muted'">
+                {{ connectionMode === 'ethercat' ? (ethercatConnected ? '主站已连接' : '主站未连接') : connected ? '已连接' : '未连接' }}
+              </span>
             </div>
           </div>
           <div class="ksu-card-body">
@@ -34,20 +41,27 @@ const { activePage, allowUnsupportedBaud, baudRate, baudRates, busy, cancelDisco
               <h2 class="ksu-page-title">{{ summary?.deviceName ?? (profile ? '设备 Profile 已加载' : '尚未导入设备 Profile') }}</h2>
               <p class="ksu-hint">
                 <template v-if="summary">Profile {{ summary.profileVersion }} · {{ summary.parameterCount }} 参数 · {{ summary.statusCount }} 状态量</template>
-                <template v-else-if="profile">Profile 已就绪，选择运行模式后连接。</template>
+                <template v-else-if="profile">Profile 已就绪，选择连接方式后连接。</template>
                 <template v-else>导入设备 JSON Profile 后即可建立连接。</template>
               </p>
             </div>
             <div class="ksu-row-actions">
-              <span class="ksu-pill" :class="connectionMode === 'serial' ? 'ksu-pill--ok' : 'ksu-pill--muted'">{{ connectionMode === 'serial' ? '真实串口' : '配置模拟器' }}</span>
+              <span class="ksu-pill" :class="connectionMode === 'simulator' ? 'ksu-pill--muted' : 'ksu-pill--ok'">{{ modeLabel }}</span>
               <span v-if="connectionMode === 'serial'" class="ksu-pill">{{ portName || '未选择串口' }}</span>
-              <span class="ksu-pill">站号 {{ slaveId }}</span>
-              <span class="ksu-pill">{{ baudRate }} baud</span>
-              <span class="ksu-pill">{{ protocol === 'rtu' ? 'RTU' : 'ASCII' }} · 8{{ { none: 'N', even: 'E', odd: 'O' }[parity] }}{{ stopBits }}</span>
+              <span v-else-if="connectionMode === 'tcp'" class="ksu-pill">{{ host }}:{{ port }}</span>
+              <span v-else-if="connectionMode === 'ethercat'" class="ksu-pill">{{ ethercatConnected ? '已接管网卡' : '未接管网卡' }}</span>
+              <template v-if="modbusMode">
+                <span class="ksu-pill">站号 {{ slaveId }}</span>
+                <template v-if="connectionMode !== 'tcp'">
+                  <span class="ksu-pill">{{ baudRate }} baud</span>
+                  <span class="ksu-pill">{{ protocol === 'rtu' ? 'RTU' : 'ASCII' }} · 8{{ { none: 'N', even: 'E', odd: 'O' }[parity] }}{{ stopBits }}</span>
+                </template>
+              </template>
             </div>
-            <button v-if="!connected" class="ksu-btn ksu-btn--primary ksu-btn--block" :disabled="busy || !!connectionBlockedReason" :title="connectionBlockedReason" @click="connect">连接</button>
-            <button v-else class="ksu-btn ksu-btn--danger ksu-btn--block" :disabled="busy" @click="disconnect">断开连接</button>
-            <p v-if="!connected && connectionBlockedReason" class="ksu-hint">{{ connectionBlockedReason }}</p>
+            <button v-if="modbusMode && !connected" class="ksu-btn ksu-btn--primary ksu-btn--block" :disabled="busy || !!connectionBlockedReason" :title="connectionBlockedReason" @click="connect">连接</button>
+            <button v-else-if="connected" class="ksu-btn ksu-btn--danger ksu-btn--block" :disabled="busy" @click="disconnect">断开连接</button>
+            <p v-if="modbusMode && !connected && connectionBlockedReason" class="ksu-hint">{{ connectionBlockedReason }}</p>
+            <p v-else-if="connectionMode === 'ethercat'" class="ksu-hint">EtherCAT 主站通过下方“连接参数”中的网卡选择进行接管；参数工作区仍使用 Modbus Profile。</p>
           </div>
         </section>
 
@@ -179,89 +193,112 @@ const { activePage, allowUnsupportedBaud, baudRate, baudRates, busy, cancelDisco
               <div class="ksu-card-head">
                 <div>
                   <h2 class="ksu-card-title">连接参数</h2>
-                  <p class="ksu-card-sub">串口参数需与从站一致</p>
+                  <p class="ksu-card-sub">{{ connectionMode === 'ethercat' ? '选择专用网卡并接管 EtherCAT 总线' : connectionMode === 'tcp' ? '填写 Modbus TCP 主机与端口' : connectionMode === 'serial' ? '串口参数需与从站一致' : '使用 Profile 默认通讯参数' }}</p>
                 </div>
               </div>
               <div class="ksu-card-body">
                 <div class="ksu-field">
-                  <span class="ksu-field-label">运行模式</span>
-                  <div class="ksu-segmented" role="group" aria-label="运行模式">
+                  <span class="ksu-field-label">连接方式</span>
+                  <div class="ksu-segmented ksu-segmented--wrap" role="group" aria-label="连接方式">
                     <button
                       type="button" class="ksu-segmented-item" :class="{ active: connectionMode === 'simulator' }"
-                      :disabled="connected || busy" @click="connectionMode = 'simulator'"
-                    >配置模拟器</button>
+                      :disabled="connected || busy || ethercatConnected" title="配置模拟器" @click="connectionMode = 'simulator'"
+                    >模拟器</button>
                     <button
                       type="button" class="ksu-segmented-item" :class="{ active: connectionMode === 'serial' }"
-                      :disabled="connected || busy" @click="connectionMode = 'serial'"
-                    >真实串口</button>
+                      :disabled="connected || busy || ethercatConnected" title="Modbus 串口" @click="connectionMode = 'serial'"
+                    >串口</button>
+                    <button
+                      type="button" class="ksu-segmented-item" :class="{ active: connectionMode === 'tcp' }"
+                      :disabled="connected || busy || ethercatConnected" title="Modbus TCP" @click="connectionMode = 'tcp'"
+                    >TCP</button>
+                    <button
+                      type="button" class="ksu-segmented-item" :class="{ active: connectionMode === 'ethercat' }"
+                      :disabled="connected || busy" title="EtherCAT 主站" @click="connectionMode = 'ethercat'"
+                    >EtherCAT</button>
                   </div>
                 </div>
 
-                <div v-if="connectionMode === 'serial'" class="ksu-field">
-                  <span class="ksu-field-label">串口</span>
-                  <div class="inline-field">
-                    <select class="ksu-select" v-model="portName" :disabled="connected || busy">
-                      <option value="" disabled>请选择串口</option>
-                      <option v-for="port in ports" :key="port.name" :value="port.name">{{ port.name }}</option>
-                    </select>
-                    <button class="ksu-btn ksu-btn--sm" :disabled="connected || busy" title="刷新串口" aria-label="刷新串口" @click="refreshPorts">刷新</button>
-                  </div>
-                </div>
-
-                <div class="ksu-form-grid">
-                  <label class="ksu-field">
-                    <span class="ksu-field-label">站号</span>
-                    <input class="ksu-input" v-model.number="slaveId" type="number" min="1" :max="stationMax" :disabled="connected || busy" />
-                  </label>
-                  <label class="ksu-field">
-                    <span class="ksu-field-label">波特率</span>
-                    <select class="ksu-select" v-model.number="baudRate" :disabled="connected || busy">
-                      <option v-for="baud in baudRates" :key="baud" :value="baud">{{ baud }}</option>
-                    </select>
-                  </label>
-                  <label class="ksu-field">
-                    <span class="ksu-field-label">协议</span>
-                    <select class="ksu-select" v-model="protocol" :disabled="connected || busy">
-                      <option value="rtu">Modbus RTU</option>
-                      <option value="ascii">Modbus ASCII</option>
-                    </select>
-                  </label>
-                  <label class="ksu-field">
-                    <span class="ksu-field-label">停止位</span>
-                    <select class="ksu-select" v-model.number="stopBits" :disabled="connected || busy">
-                      <option :value="1">1</option>
-                      <option :value="2">2</option>
-                    </select>
-                  </label>
-                  <label class="ksu-field">
-                    <span class="ksu-field-label">校验</span>
-                    <select class="ksu-select" v-model="parity" :disabled="connected || busy">
-                      <option value="none">N · 无校验</option>
-                      <option value="even">E · 偶校验</option>
-                      <option value="odd">O · 奇校验</option>
-                    </select>
-                  </label>
-                  <label class="ksu-field">
-                    <span class="ksu-field-label">超时 ms</span>
-                    <input class="ksu-input" v-model.number="timeoutMs" type="number" min="100" max="10000" :disabled="connected || busy" />
-                  </label>
-                </div>
-
-                <div class="ksu-list">
-                  <div class="ksu-row ksu-row--static">
-                    <div class="ksu-row-body">
-                      <span class="ksu-row-title">扩展波特率</span>
-                      <span class="ksu-row-sub">允许连接与查找 Profile 未列出的常用波特率；仅本次应用会话，不修改 Profile</span>
-                    </div>
-                    <div class="ksu-row-control">
-                      <button type="button" class="ksu-switch" role="switch" :aria-checked="allowUnsupportedBaud" :disabled="connected || busy" aria-label="允许 Profile 外波特率" @click="allowUnsupportedBaud = !allowUnsupportedBaud">
-                        <span class="ksu-switch-knob"></span>
-                      </button>
+                <EthercatConnectCard v-if="connectionMode === 'ethercat'" />
+                <template v-else>
+                  <div v-if="connectionMode === 'serial'" class="ksu-field">
+                    <span class="ksu-field-label">串口</span>
+                    <div class="inline-field">
+                      <select class="ksu-select" v-model="portName" :disabled="connected || busy">
+                        <option value="" disabled>请选择串口</option>
+                        <option v-for="item in ports" :key="item.name" :value="item.name">{{ item.name }}</option>
+                      </select>
+                      <button class="ksu-btn ksu-btn--sm" :disabled="connected || busy" title="刷新串口" aria-label="刷新串口" @click="refreshPorts">刷新</button>
                     </div>
                   </div>
-                </div>
+                  <div v-else-if="connectionMode === 'tcp'" class="ksu-form-grid">
+                    <label class="ksu-field">
+                      <span class="ksu-field-label">主机</span>
+                      <input class="ksu-input" v-model="host" :disabled="connected || busy" placeholder="192.168.1.10" aria-label="Modbus TCP 主机" />
+                    </label>
+                    <label class="ksu-field">
+                      <span class="ksu-field-label">端口</span>
+                      <input class="ksu-input" v-model.number="port" type="number" min="1" max="65535" :disabled="connected || busy" aria-label="Modbus TCP 端口" />
+                    </label>
+                  </div>
 
-                <div v-if="!connected && connectionBlockedReason" class="ksu-banner ksu-banner--info" role="status">
+                  <div class="ksu-form-grid">
+                    <label class="ksu-field">
+                      <span class="ksu-field-label">站号</span>
+                      <input class="ksu-input" v-model.number="slaveId" type="number" min="1" :max="stationMax" :disabled="connected || busy" />
+                    </label>
+                    <template v-if="connectionMode === 'serial'">
+                      <label class="ksu-field">
+                        <span class="ksu-field-label">波特率</span>
+                        <select class="ksu-select" v-model.number="baudRate" :disabled="connected || busy">
+                          <option v-for="baud in baudRates" :key="baud" :value="baud">{{ baud }}</option>
+                        </select>
+                      </label>
+                      <label class="ksu-field">
+                        <span class="ksu-field-label">协议</span>
+                        <select class="ksu-select" v-model="protocol" :disabled="connected || busy">
+                          <option value="rtu">Modbus RTU</option>
+                          <option value="ascii">Modbus ASCII</option>
+                        </select>
+                      </label>
+                      <label class="ksu-field">
+                        <span class="ksu-field-label">停止位</span>
+                        <select class="ksu-select" v-model.number="stopBits" :disabled="connected || busy">
+                          <option :value="1">1</option>
+                          <option :value="2">2</option>
+                        </select>
+                      </label>
+                      <label class="ksu-field">
+                        <span class="ksu-field-label">校验</span>
+                        <select class="ksu-select" v-model="parity" :disabled="connected || busy">
+                          <option value="none">N · 无校验</option>
+                          <option value="even">E · 偶校验</option>
+                          <option value="odd">O · 奇校验</option>
+                        </select>
+                      </label>
+                    </template>
+                    <label class="ksu-field">
+                      <span class="ksu-field-label">超时 ms</span>
+                      <input class="ksu-input" v-model.number="timeoutMs" type="number" min="100" max="10000" :disabled="connected || busy" />
+                    </label>
+                  </div>
+
+                  <div v-if="connectionMode === 'serial'" class="ksu-list">
+                    <div class="ksu-row ksu-row--static">
+                      <div class="ksu-row-body">
+                        <span class="ksu-row-title">扩展波特率</span>
+                        <span class="ksu-row-sub">允许连接与查找 Profile 未列出的常用波特率；仅本次应用会话，不修改 Profile</span>
+                      </div>
+                      <div class="ksu-row-control">
+                        <button type="button" class="ksu-switch" role="switch" :aria-checked="allowUnsupportedBaud" :disabled="connected || busy" aria-label="允许 Profile 外波特率" @click="allowUnsupportedBaud = !allowUnsupportedBaud">
+                          <span class="ksu-switch-knob"></span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+
+                <div v-if="modbusMode && !connected && connectionBlockedReason" class="ksu-banner ksu-banner--info" role="status">
                   <div class="ksu-banner-body">
                     <strong>连接条件未满足</strong>
                     <span>{{ connectionBlockedReason }}</span>

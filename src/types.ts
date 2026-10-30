@@ -2,7 +2,8 @@ export type RawType = "u16" | "i16";
 export type Access = "ro" | "rw";
 export type RiskLevel = "low" | "medium" | "high" | "critical";
 export type Parity = "none" | "even" | "odd";
-export type ConnectionMode = "simulator" | "serial";
+export type ModbusConnectionMode = "simulator" | "serial" | "tcp";
+export type ConnectionMode = ModbusConnectionMode | "ethercat";
 
 export interface EnumChoice {
   value: number;
@@ -187,6 +188,27 @@ export interface DiscoveryStatus {
 export interface RegisterValue {
   address: number;
   raw: number;
+}
+
+export interface EthercatSlave {
+  position: number;
+  station: number;
+  name: string;
+  vendor: number;
+  product: number;
+  revision: number;
+  state: number;
+  alCode: number;
+  mailboxOut: number;
+  mailboxIn: number;
+  mailboxProtocols?: number;
+}
+
+export interface EthercatStatus {
+  connected: boolean;
+  adapter: string;
+  slaves: EthercatSlave[];
+  driverDropped: number | null;
 }
 
 export interface ScanStatus {

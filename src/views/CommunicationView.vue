@@ -6,8 +6,7 @@ import EthercatMasterView from '../features/ethercat/EthercatMasterView.vue';
 
 type MailboxMap = { mailboxes: Array<{ station: number; offset: number }> };
 
-const { backgroundActivity } = useServo();
-const tab = ref<'recording' | 'ethercat'>('recording');
+const { backgroundActivity, communicationTab: tab } = useServo();
 const recRef = ref<{ applyMailboxes: (value: MailboxMap) => void } | null>(null);
 const recActivity = ref('');
 const ethActivity = ref('');

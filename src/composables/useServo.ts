@@ -13,6 +13,7 @@ import type {
   SerialMode,
   CommunicationStats,
   DiscoveryStatus,
+  ModbusConnectionMode,
   ConnectionMode,
   ParameterDefinition,
   ParameterValue,
@@ -38,6 +39,7 @@ function createServo() {
 
 const backgroundActivity = ref('');
 const activePage = ref<(typeof pages)[number]['id']>('connection');
+const communicationTab = ref<'recording' | 'ethercat'>('recording');
 const currentPage = computed(() => pages.find(page => page.id === activePage.value)!);
 watch(activePage, () => {
   window.scrollTo({ top: 0 });
@@ -50,6 +52,9 @@ const connected = ref(false);
 const connectionMode = ref<ConnectionMode>("simulator");
 const ports = ref<SerialPortInfo[]>([]);
 const portName = ref("");
+const host = ref("127.0.0.1");
+const port = ref(502);
+const ethercatConnected = ref(false);
 const slaveId = ref(1);
 const baudRate = ref(19200);
 const parity = ref<Parity>("even");
@@ -80,8 +85,12 @@ function serialModeLabel(mode: SerialMode) {
 }
 const timeoutMs = ref(800);
 const connectionBlockedReason = computed(() => {
+  if (connectionMode.value === "ethercat") return "";
   if (!profile.value) return "请先导入设备 Profile（JSON），连接和查找需要其中的寄存器地址。";
   if (connectionMode.value === "serial" && !portName.value) return "请选择串口，再连接或自动查找。";
+  if (connectionMode.value === "tcp" && (!host.value.trim() || !Number.isInteger(port.value) || port.value < 1 || port.value > 65535)) {
+    return "请填写 Modbus TCP 主机与端口（1..65535）。";
+  }
   return "";
 });
 const values = ref<Record<string, ParameterValue>>({});
@@ -380,14 +389,18 @@ async function refreshPorts() {
 
 async function connect() {
   if (busy.value) return;
+  if (connectionMode.value === "ethercat") { showError("EtherCAT 主站请在连接参数卡片中连接"); return; }
   if (connectionBlockedReason.value) { showError(connectionBlockedReason.value); return; }
+  const mode = connectionMode.value as ModbusConnectionMode;
   busy.value = true;
   errorMessage.value = "";
   try {
     await applyCommunicationSettings();
     await servoApi.connect({
-      mode: connectionMode.value,
-      portName: connectionMode.value === "serial" ? portName.value || null : null,
+      mode,
+      portName: mode === "serial" ? portName.value || null : null,
+      host: mode === "tcp" ? host.value.trim() : null,
+      port: mode === "tcp" ? port.value : null,
       slaveId: slaveId.value,
       baudRate: baudRate.value,
       allowUnsupportedBaud: allowUnsupportedBaud.value,
@@ -400,7 +413,7 @@ async function connect() {
     connected.value = true;
     communicationStats.value = null;
     statusUpdatedAt.value = null;
-    notice.value = connectionMode.value === "simulator" ? "配置模拟器已连接" : `${portName.value} 已连接`;
+    notice.value = mode === "simulator" ? "配置模拟器已连接" : mode === "tcp" ? `${host.value}:${port.value} 已连接` : `${portName.value} 已连接`;
     staleIds.value = new Set(profile.value?.parameters.map(item => item.parameterId));
     await readParameterGroups(false);
     scheduleStatusPoll(0);
@@ -711,5 +724,5 @@ function formatTimestamp(timestampMs: number) {
 onMounted(refreshAudit);
 onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearTimeout(statusTimer); window.clearTimeout(discoveryTimer); if (discoveryActive.value) void servoApi.cancelDiscovery(); });
 
-  return { backgroundActivity, activePage, currentPage, profile, summary, connected, connectionMode, ports, portName, slaveId, baudRate, parity, stopBits, protocol, stationMax, baudRates, allowUnsupportedBaud, discoveryBaudRates, toggleDiscoveryBaud, selectAllDiscoveryBaudRates, timeoutMs, connectionBlockedReason, values, drafts, statuses, statusUpdatedAt, audit, comparison, snapshotExportPath, selectedBatch, scopeRunning, sampleInterval, scopeChannels, scopeData, query, selectedGroup, busy, notice, errorMessage, statusTimer, pollingEnabled, communicationError, retries, maxRegisters, communicationStats, readActive, cancelRequested, readProgress, failedGroups, staleIds, testActive, testCycles, testProgress, testResults, pollInFlight, disposed, discoveryActive, discovery, discoveryMessage, discoveryStart, discoveryEnd, discoveryTimeout, discoveryTimer, probeRange, groups, comparisonById, changedDifferences, headlineStatuses, scopePalette, scopeSeries, scopeOptions, canApply, canPersist, filteredParameters, confirmReq, confirmInput, confirmError, confirmField, confirmResolve, confirmOpener, serialModeLabel, pollDiscovery, discoverConnection, cancelDiscovery, updateDiagnostics, applyCommunicationSettings, saveCommunicationSettings, pauseForOperation, runStabilityTest, requestConfirm, closeConfirm, showError, loadProfileJson, handleProfileFile, refreshPorts, connect, disconnect, readAll, readParameterGroups, exportSnapshot, handleSnapshotFile, writeSelectedBatch, clearComparison, writeOne, applyChanges, persistChanges, scheduleStatusPoll, normalizeSampleInterval, refreshAudit, isDirty, riskLabel, hex, formatTimestamp };
+  return { backgroundActivity, activePage, currentPage, communicationTab, profile, summary, connected, connectionMode, ports, portName, host, port, ethercatConnected, slaveId, baudRate, parity, stopBits, protocol, stationMax, baudRates, allowUnsupportedBaud, discoveryBaudRates, toggleDiscoveryBaud, selectAllDiscoveryBaudRates, timeoutMs, connectionBlockedReason, values, drafts, statuses, statusUpdatedAt, audit, comparison, snapshotExportPath, selectedBatch, scopeRunning, sampleInterval, scopeChannels, scopeData, query, selectedGroup, busy, notice, errorMessage, statusTimer, pollingEnabled, communicationError, retries, maxRegisters, communicationStats, readActive, cancelRequested, readProgress, failedGroups, staleIds, testActive, testCycles, testProgress, testResults, pollInFlight, disposed, discoveryActive, discovery, discoveryMessage, discoveryStart, discoveryEnd, discoveryTimeout, discoveryTimer, probeRange, groups, comparisonById, changedDifferences, headlineStatuses, scopePalette, scopeSeries, scopeOptions, canApply, canPersist, filteredParameters, confirmReq, confirmInput, confirmError, confirmField, confirmResolve, confirmOpener, serialModeLabel, pollDiscovery, discoverConnection, cancelDiscovery, updateDiagnostics, applyCommunicationSettings, saveCommunicationSettings, pauseForOperation, runStabilityTest, requestConfirm, closeConfirm, showError, loadProfileJson, handleProfileFile, refreshPorts, connect, disconnect, readAll, readParameterGroups, exportSnapshot, handleSnapshotFile, writeSelectedBatch, clearComparison, writeOne, applyChanges, persistChanges, scheduleStatusPoll, normalizeSampleInterval, refreshAudit, isDirty, riskLabel, hex, formatTimestamp };
 }

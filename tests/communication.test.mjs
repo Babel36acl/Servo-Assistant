@@ -41,7 +41,7 @@ function fixture(overrides = {}) {
   // P2 起：页面逻辑住在应用状态单例里（src/composables/useServo.ts），
   // 这里直接实例化 createServo()，与线上 App.vue 首个调用方行为一致。
   const source = readFileSync(new URL('../src/composables/useServo.ts', import.meta.url), 'utf8');
-  const names = 'readAll, runStabilityTest, scheduleStatusPoll, pollingEnabled, connected, profile, maxRegisters, values, drafts, staleIds, failedGroups, busy, cancelRequested, readProgress, errorMessage, communicationError, testResults, testCycles, discoverConnection, discovery, discoveryMessage, discoveryActive, portName, slaveId, baudRate, protocol, parity, stopBits, discoveryEnd, connectionBlockedReason, connectionMode, connect, exportSnapshot, snapshotExportPath, notice, allowUnsupportedBaud, discoveryBaudRates';
+  const names = 'readAll, runStabilityTest, scheduleStatusPoll, pollingEnabled, connected, profile, maxRegisters, values, drafts, staleIds, failedGroups, busy, cancelRequested, readProgress, errorMessage, communicationError, testResults, testCycles, discoverConnection, discovery, discoveryMessage, discoveryActive, portName, slaveId, baudRate, protocol, parity, stopBits, discoveryEnd, connectionBlockedReason, connectionMode, connect, exportSnapshot, snapshotExportPath, notice, allowUnsupportedBaud, discoveryBaudRates, host, port';
   const app = evaluate(source + `\nconst __s = createServo();\nconst { ${names} } = __s;\nexport { ${names} };`);
   app.connected.value = true;
   app.profile.value = { parameters: [{ parameterId: 'P1', address: 1 }, { parameterId: 'P2', address: 3 }], statuses: [{ id: 'speed', address: 4096 }, { id: 'position', address: 4097 }] };
@@ -177,6 +177,24 @@ test('discovery extends baud selection only when the session override is on', as
   assert.equal(requests.length, 1);
   assert.deepEqual([...requests[0].baudRates], [19200, 9600]);
   assert.equal(requests[0].connection.allowUnsupportedBaud, true);
+});
+
+test('Modbus TCP connection sends host and port and blocks a missing endpoint', async () => {
+  const requests = [];
+  const { app } = fixture({ connect: async request => { requests.push(request); return { connected: true, mode: 'tcp' }; } });
+  app.profile.value = { transport: { defaultSlaveId: 1, defaultBaudRate: 19200, allowedBaudRates: [19200] }, parameters: [], statuses: [] };
+  app.connected.value = false;
+  app.connectionMode.value = 'tcp';
+  app.host.value = '';
+  assert.match(app.connectionBlockedReason.value, /主机/);
+  app.host.value = '192.168.1.10';
+  app.port.value = 502;
+  await app.connect();
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].mode, 'tcp');
+  assert.equal(requests[0].portName, null);
+  assert.equal(requests[0].host, '192.168.1.10');
+  assert.equal(requests[0].port, 502);
 });
 
 test('snapshot export reports confirmed path and preserves it on cancellation or failure', async () => {

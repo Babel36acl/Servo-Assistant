@@ -190,3 +190,14 @@
 .ksu-page .ksu-hint {
   overflow-wrap: anywhere;
 }
+
+/* 连接方式四选一：窄侧栏允许换行，保持分段控件外观 */
+.ksu-page .ksu-segmented--wrap {
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.ksu-page .ksu-segmented--wrap .ksu-segmented-item {
+  flex: 1 1 calc(50% - 4px);
+  padding: 0 10px;
+}
