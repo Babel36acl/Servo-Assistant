@@ -57,40 +57,79 @@ impl Drop for DiscoveryLease {
     }
 }
 
-pub fn candidates(
-    start: u8,
-    end: u8,
-    preferred: u8,
-    baud: u32,
+pub const COMMON_BAUD_RATES: [u32; 8] = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200];
+
+/// Validate a user-selected baud list against what the current preset allows.
+/// The preferred baud is always probed first and the result is de-duplicated.
+pub fn validate_selected_rates(
+    preferred: u32,
+    selected: &[u32],
     allowed: &[u32],
-) -> Result<Vec<(u32, u8)>, String> {
-    if start == 0 || start > end || end > 247 || !allowed.contains(&baud) {
-        return Err("站号范围须为 1..247，首选波特率须属于 Profile".into());
+) -> Result<Vec<u32>, String> {
+    if selected.is_empty() || selected.len() > 32 {
+        return Err("搜索波特率数量须为 1..32".into());
     }
-    let mut rates = vec![baud];
-    for &rate in allowed {
+    if !allowed.contains(&preferred) {
+        return Err(format!("首选波特率 {preferred} 不在当前允许范围"));
+    }
+    if !selected.contains(&preferred) {
+        return Err("首选波特率必须包含在搜索范围".into());
+    }
+    let mut rates = vec![preferred];
+    for &rate in selected {
+        if !allowed.contains(&rate) {
+            return Err(format!("波特率 {rate} 不在当前允许范围"));
+        }
         if !rates.contains(&rate) {
             rates.push(rate);
         }
     }
+    Ok(rates)
+}
+
+/// Build the full probe order. The current station is checked across every
+/// selected baud and serial mode first, so a single device with an unknown
+/// baud/format is found without sweeping the whole station range at one rate.
+pub fn plan(
+    start: u8,
+    end: u8,
+    preferred_station: u8,
+    preferred_baud: u32,
+    rates: &[u32],
+    modes: &[SerialMode],
+) -> Vec<(u32, u8, SerialMode)> {
+    let mut ordered_rates = vec![preferred_baud];
+    for &rate in rates {
+        if !ordered_rates.contains(&rate) {
+            ordered_rates.push(rate);
+        }
+    }
     let mut stations = Vec::new();
-    if (start..=end).contains(&preferred) {
-        stations.push(preferred);
+    if (start..=end).contains(&preferred_station) {
+        stations.push(preferred_station);
     }
     for station in start..=end {
-        if station != preferred {
+        if station != preferred_station {
             stations.push(station);
         }
     }
-    Ok(rates
-        .into_iter()
-        .flat_map(|rate| {
-            stations
-                .iter()
-                .map(move |&station| (rate, station))
-                .collect::<Vec<_>>()
-        })
-        .collect())
+    let Some((&first, rest)) = stations.split_first() else {
+        return Vec::new();
+    };
+    let mut result = Vec::new();
+    for &rate in &ordered_rates {
+        for &mode in modes {
+            result.push((rate, first, mode));
+        }
+    }
+    for &rate in &ordered_rates {
+        for &station in rest {
+            for &mode in modes {
+                result.push((rate, station, mode));
+            }
+        }
+    }
+    result
 }
 
 pub fn scan(
@@ -168,13 +207,33 @@ mod tests {
         );
     }
     #[test]
-    fn ordering_and_limits() {
+    fn selected_rates_are_deduped_and_bounded() {
         assert_eq!(
-            candidates(1, 2, 2, 19200, &[9600, 19200, 9600]).unwrap(),
-            vec![(19200, 2), (19200, 1), (9600, 2), (9600, 1)]
+            validate_selected_rates(19200, &[19200, 9600, 19200], &[9600, 19200]).unwrap(),
+            vec![19200, 9600]
         );
-        assert!(candidates(0, 2, 1, 19200, &[19200]).is_err());
-        assert!(candidates(2, 1, 1, 19200, &[19200]).is_err());
+        assert!(validate_selected_rates(19200, &[9600], &[9600, 19200]).is_err());
+        assert!(validate_selected_rates(19200, &[19200, 12345], &[19200]).is_err());
+        assert!(validate_selected_rates(19200, &[], &[19200]).is_err());
+    }
+
+    #[test]
+    fn plan_checks_the_current_station_across_rates_and_modes_first() {
+        let mode = SerialMode {
+            protocol: Protocol::Rtu,
+            parity: ParitySetting::Even,
+            stop_bits: 1,
+        };
+        let modes = vec![mode];
+        let plan = super::plan(1, 3, 2, 19200, &[19200, 9600], &modes);
+        assert_eq!(plan.len(), 3 * 2);
+        assert_eq!(plan[0], (19200, 2, mode));
+        assert_eq!(plan[1], (9600, 2, mode));
+        assert_eq!(plan[2], (19200, 1, mode));
+        assert_eq!(plan[3], (19200, 3, mode));
+        assert_eq!(plan[4], (9600, 1, mode));
+        let plan = super::plan(3, 5, 1, 19200, &[19200], &modes);
+        assert_eq!(plan[0].1, 3);
     }
     #[test]
     fn found_stops_scan_and_cancel_wins_over_inflight_result() {

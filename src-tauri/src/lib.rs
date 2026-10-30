@@ -14,14 +14,16 @@ mod recording_analysis;
 mod recording_index;
 mod recording_library;
 mod runtime;
+mod scan;
 mod snapshot_export;
 
 use runtime::{
-    apply_parameters, batch_write_parameters, cancel_discovery, capture_parameter_snapshot,
-    compare_parameter_snapshot, configure_communication, connect_device, disconnect_device,
-    discover_device, get_active_profile, get_audit_log, get_communication_stats,
-    get_connection_status, get_discovery_status, import_profile, list_serial_ports,
-    persist_parameters, probe_read, read_parameters, read_statuses, write_parameter, AppState,
+    apply_parameters, batch_write_parameters, cancel_discovery, cancel_register_scan,
+    capture_parameter_snapshot, compare_parameter_snapshot, configure_communication,
+    connect_device, disconnect_device, discover_device, get_active_profile, get_audit_log,
+    get_communication_stats, get_connection_status, get_discovery_status, import_profile,
+    list_serial_ports, persist_parameters, probe_read, read_parameters, read_statuses,
+    register_scan_status, scan_registers, write_parameter, AppState,
 };
 use tauri::Manager;
 
@@ -81,6 +83,9 @@ pub fn run() {
             discover_device,
             cancel_discovery,
             get_discovery_status,
+            scan_registers,
+            register_scan_status,
+            cancel_register_scan,
             configure_communication,
             get_communication_stats,
             probe_read,

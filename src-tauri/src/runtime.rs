@@ -7,6 +7,7 @@ use crate::profile::{
     decode_value, encode_value, Access, OperationDefinition, OperationSet, ParameterDefinition,
     ParitySetting, ProfileError, RiskLevel, ServoProfile, StatusDefinition,
 };
+use crate::scan::{self, ScanControl, ScanStatus};
 use serde::{Deserialize, Serialize};
 use serialport::{DataBits, Parity, StopBits};
 use std::collections::{HashMap, HashSet};
@@ -66,6 +67,7 @@ enum RuntimeError {
 pub struct AppState {
     inner: Arc<Mutex<Runtime>>,
     discovery: Arc<DiscoveryControl>,
+    scan: Arc<ScanControl>,
 }
 
 impl AppState {
@@ -81,6 +83,7 @@ impl AppState {
         );
         Ok(Self {
             discovery: Arc::default(),
+            scan: Arc::default(),
             inner: Arc::new(Mutex::new(Runtime {
                 profile: None,
                 session: None,
@@ -267,7 +270,22 @@ impl ConnectionRequest {
             profile.transport.allowed_baud_rates.clone()
         }
     }
+    fn allowed_rates(&self, profile: &ServoProfile) -> Vec<u32> {
+        let mut rates = self.rates(profile);
+        if self.allow_unsupported_baud {
+            for rate in discovery::COMMON_BAUD_RATES {
+                if !rates.contains(&rate) {
+                    rates.push(rate);
+                }
+            }
+        }
+        rates
+    }
     fn validate(&self, profile: &ServoProfile) -> Result<(), String> {
+        let rates = self.allowed_rates(profile);
+        self.validate_with_rates(&rates)
+    }
+    fn validate_with_rates(&self, rates: &[u32]) -> Result<(), String> {
         let max = if self.preset == ConnectionPreset::P300 {
             32
         } else {
@@ -276,7 +294,7 @@ impl ConnectionRequest {
         if !(1..=max).contains(&self.slave_id) {
             return Err(format!("站号必须为 1..{max}"));
         }
-        if !self.rates(profile).contains(&self.baud_rate) || self.baud_rate == 0 {
+        if !rates.contains(&self.baud_rate) || self.baud_rate == 0 {
             return Err("波特率不属于当前通讯预设".into());
         }
         if !matches!(self.stop_bits, 1 | 2)
@@ -299,6 +317,11 @@ pub struct ConnectionRequest {
     pub port_name: Option<String>,
     pub slave_id: u8,
     pub baud_rate: u32,
+    /// Explicit, session-only opt-in to link rates outside the Profile list.
+    /// It never changes what a Profile declares; connection and discovery both
+    /// have to receive this flag to use an extended rate.
+    #[serde(default)]
+    pub allow_unsupported_baud: bool,
     pub parity: ParitySetting,
     pub stop_bits: u8,
     pub timeout_ms: u64,
@@ -443,12 +466,19 @@ where
     if state.discovery.running.load(Ordering::SeqCst) {
         return Err("自动查找占用串口，请先取消或等待完成".into());
     }
+    if state.scan.running.load(Ordering::SeqCst) {
+        return Err("寄存器扫描占用串口，请先取消或等待完成".into());
+    }
     let inner = state.inner.clone();
     let discovery = state.discovery.clone();
+    let scan = state.scan.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let mut runtime = inner.lock().map_err(|_| RuntimeError::Poisoned)?;
         if discovery.running.load(Ordering::SeqCst) {
             return Err(RuntimeError::Task("自动查找正在运行".into()));
+        }
+        if scan.running.load(Ordering::SeqCst) {
+            return Err(RuntimeError::Task("寄存器扫描正在运行".into()));
         }
         let result = operation(&mut runtime);
         let events = match runtime.session.as_mut() {
@@ -477,6 +507,10 @@ pub struct DiscoveryRequest {
     connection: ConnectionRequest,
     start_slave: u8,
     end_slave: u8,
+    /// Optional explicit baud list for this scan. When absent the Profile (or
+    /// P300 preset) list is used; the preferred baud must be included.
+    #[serde(default)]
+    baud_rates: Option<Vec<u32>>,
 }
 
 #[tauri::command]
@@ -507,6 +541,10 @@ pub async fn discover_device(
     {
         return Err("自动查找已经运行".into());
     }
+    if state.scan.running.load(Ordering::SeqCst) {
+        state.discovery.running.store(false, Ordering::SeqCst);
+        return Err("寄存器扫描占用串口，请先取消或等待完成".into());
+    }
     state.discovery.cancel.store(false, Ordering::SeqCst);
     let worker_control = state.discovery.clone();
     let inner = state.inner.clone();
@@ -517,11 +555,26 @@ pub async fn discover_device(
         let profile = runtime.profile.as_ref().ok_or("请先导入设备 Profile")?;
         let mut connection = request.connection;
         if !matches!(connection.mode, ConnectionMode::Serial) { return Err("自动查找仅适用于真实串口".into()); }
-        connection.validate(profile)?;
+        if request.start_slave == 0 || request.start_slave > request.end_slave || request.end_slave > 247 {
+            return Err("站号范围须为 1..247".into());
+        }
         if connection.preset == ConnectionPreset::P300 && request.end_slave > 32 { return Err("P300 站号范围为 1..32".into()); }
-        let pairs = discovery::candidates(request.start_slave, request.end_slave, connection.slave_id, connection.baud_rate, &connection.rates(profile))?;
+        let allowed = connection.allowed_rates(profile);
+        let rates = match request.baud_rates {
+            Some(selected) => discovery::validate_selected_rates(connection.baud_rate, &selected, &allowed)?,
+            None => allowed,
+        };
+        connection.validate_with_rates(&rates)?;
         let preferred = discovery::SerialMode { protocol: connection.protocol, parity: connection.parity, stop_bits: connection.stop_bits };
-        let candidates = discovery::modes(preferred).into_iter().flat_map(|mode| pairs.iter().map(move |&(baud, slave)| (baud, slave, mode))).collect::<Vec<_>>();
+        let modes = discovery::modes(preferred);
+        let candidates = discovery::plan(
+            request.start_slave,
+            request.end_slave,
+            connection.slave_id,
+            connection.baud_rate,
+            &rates,
+            &modes,
+        );
         let address = profile.statuses.first().map(|item| item.address)
             .or_else(|| profile.parameters.first().map(|item| item.address)).ok_or("Profile 没有可读取的地址")?;
         let mut client: Option<(u32, discovery::SerialMode, SerialClient)> = None;
@@ -540,12 +593,127 @@ pub async fn discover_device(
         });
         drop(client);
         let detail = match &result {
-            Ok(status) => format!("port={:?} checked={}/{} found={} cancelled={} slave={:?} baud={:?} mode={:?} address=0x{address:04X}", connection.port_name, status.completed, status.total, status.found, status.cancelled, status.slave_id, status.baud_rate, status.serial_mode),
+            Ok(status) => format!("port={:?} checked={}/{} found={} cancelled={} slave={:?} baud={:?} mode={:?} rates={rates:?} address=0x{address:04X}", connection.port_name, status.completed, status.total, status.found, status.cancelled, status.slave_id, status.baud_rate, status.serial_mode),
             Err(error) => error.clone(),
         };
         runtime.push_audit("communication.discovery", if result.is_ok() { "completed" } else { "failed" }, &detail).map_err(|error| error.to_string())?;
         result
     }).await.map_err(|error| error.to_string()).and_then(|result| result);
+    result
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegisterScanRequest {
+    connection: ConnectionRequest,
+    start_address: u16,
+    end_address: u16,
+    block_size: u16,
+    #[serde(default)]
+    include_zero: bool,
+}
+
+#[tauri::command]
+pub fn register_scan_status(state: State<'_, AppState>) -> Result<ScanStatus, String> {
+    state
+        .scan
+        .status
+        .lock()
+        .map(|status| status.clone())
+        .map_err(|_| "扫描状态锁已损坏".into())
+}
+
+#[tauri::command]
+pub fn cancel_register_scan(state: State<'_, AppState>) {
+    state.scan.cancel.store(true, Ordering::SeqCst);
+}
+
+/// Read-only FC03 scan over an explicit address range. The scan owns a
+/// temporary serial handle and refuses to run while a device session or the
+/// auto-discovery scan owns the port. It never writes to the device.
+#[tauri::command]
+pub async fn scan_registers(
+    request: RegisterScanRequest,
+    state: State<'_, AppState>,
+) -> Result<ScanStatus, String> {
+    if state
+        .scan
+        .running
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return Err("寄存器扫描已经运行".into());
+    }
+    if state.discovery.running.load(Ordering::SeqCst) {
+        state.scan.running.store(false, Ordering::SeqCst);
+        return Err("自动查找占用串口，请先取消或等待完成".into());
+    }
+    state.scan.cancel.store(false, Ordering::SeqCst);
+    if let Ok(mut status) = state.scan.status.lock() {
+        *status = ScanStatus::default();
+    }
+    let control = state.scan.clone();
+    let inner = state.inner.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || -> Result<ScanStatus, String> {
+        let _lease = scan::ScanLease(control.clone());
+        let connection = request.connection;
+        if !matches!(connection.mode, ConnectionMode::Serial) {
+            return Err("寄存器扫描仅适用于真实串口".into());
+        }
+        if !(1..=247).contains(&connection.slave_id) {
+            return Err("站号必须为 1..247".into());
+        }
+        if !(1200..=1_000_000).contains(&connection.baud_rate) {
+            return Err("波特率须为 1200..1000000".into());
+        }
+        if !matches!(connection.stop_bits, 1 | 2) {
+            return Err("停止位只能为 1 或 2".into());
+        }
+        if !(100..=10_000).contains(&connection.timeout_ms) {
+            return Err("超时须为 100..10000 ms".into());
+        }
+        scan::blocks(request.start_address, request.end_address, request.block_size)?;
+        let recorder = {
+            let runtime = inner.lock().map_err(|_| "内部状态锁已损坏")?;
+            if runtime.session.is_some() {
+                return Err("请先断开连接再扫描寄存器".into());
+            }
+            runtime.recorder.clone()
+        };
+        let mut client = open_serial_client(&connection, &recorder).map_err(|error| error.to_string())?;
+        let status = scan::scan(
+            &control,
+            request.start_address,
+            request.end_address,
+            request.block_size,
+            request.include_zero,
+            |address, count| client.read_transaction(address, count).map_err(|error| error.to_string()),
+        )?;
+        let detail = format!(
+            "port={:?} slave={} range=0x{:04X}..0x{:04X} block={} values={} failed_blocks={} cancelled={} elapsed_ms={}",
+            connection.port_name,
+            connection.slave_id,
+            request.start_address,
+            request.end_address,
+            request.block_size,
+            status.values.len(),
+            status.failed_blocks,
+            status.cancelled,
+            status.elapsed_ms
+        );
+        let mut runtime = inner.lock().map_err(|_| "内部状态锁已损坏")?;
+        runtime
+            .push_audit(
+                "communication.register_scan",
+                if status.cancelled { "cancelled" } else { "completed" },
+                &detail,
+            )
+            .map_err(|error| error.to_string())?;
+        Ok(status)
+    })
+    .await
+    .map_err(|error| error.to_string())
+    .and_then(|result| result);
     result
 }
 
