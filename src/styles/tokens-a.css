@@ -124,6 +124,41 @@
   --sa-z-sticky: 10;
   --sa-z-palette: 80;
   --sa-z-toast: 100;
+
+  /* ---- 平板主题（Miuix 结构，对照 KernelSU-Next 系 Manager「设置 / 主题设置」两屏） ----
+     只出 token，不改视图。颜色全部引用已有 --sa-*，零新增色值；
+     尺寸用 px 落在 --sa-tab-* 上，供后续视图直接引用。 */
+  /* 分组卡：设置页分组圆角卡（截图里纵向堆叠的大圆角卡片） */
+  --sa-tab-card-bg: var(--sa-bg-1); /* 卡背景：取实色底，不走玻璃 */
+  --sa-tab-card-radius: var(--sa-radius-16); /* 卡圆角：对应卡片 16 */
+  --sa-tab-card-pad: var(--sa-space-4); /* 卡内边距：对应卡片内 16 */
+  --sa-tab-card-gap: var(--sa-space-3); /* 卡间距：对应卡与卡之间 12 */
+  --sa-tab-card-maxw: 840px; /* 卡最大宽：平板单列 840，上限居中 */
+  /* 行：卡内“左图标 + 标题 + 副标题 + 右控件”的一行（截图每条设置项） */
+  --sa-tab-row-min-h: 64px; /* 行高 64（触控保底 44 上再放大） */
+  --sa-tab-row-gap: var(--sa-space-3); /* 行内图标与文字间距 12 */
+  --sa-tab-icon: 28px; /* 左图标尺寸 28 */
+  --sa-tab-icon-radius: var(--sa-radius-8); /* 左图标圆角 8 */
+  --sa-tab-title: var(--sa-text-16); /* 行标题字号 16 */
+  --sa-tab-sub: var(--sa-text-13); /* 行副标题字号 13 */
+  /* 右侧控件：开关 / 滑杆 / 下拉（截图行尾混排的三种控件） */
+  --sa-tab-toggle-w: 52px; /* 开关宽 52（截图亮蓝开关） */
+  --sa-tab-toggle-h: 32px; /* 开关高 32 */
+  --sa-tab-toggle-on: var(--sa-accent-strong); /* 开关开态底：取亮蓝 accent */
+  --sa-tab-slider-hit: 28px; /* 滑杆热区高 28（对应“界面缩放/描述最大行数”刻度条） */
+  --sa-tab-slider-thumb: 28px; /* 滑杆拇指直径 28 */
+  --sa-tab-select-h: 48px; /* 下拉行高 48 */
+  --sa-tab-sheet-radius: var(--sa-radius-16); /* 下拉浮层圆角 16（Miuix 小弹窗） */
+  /* 悬浮胶囊坞 + 角标（截图底部悬浮导航坞及图标右上角数字标） */
+  --sa-tab-dock-h: 72px; /* 悬浮坞高 72 */
+  --sa-tab-dock-radius: var(--sa-radius-pill); /* 悬浮坞胶囊圆角 */
+  --sa-tab-dock-pad: var(--sa-space-3); /* 悬浮坞内边距 12 */
+  --sa-tab-dock-bottom: var(--sa-space-4); /* 悬浮坞底边距 16 */
+  --sa-tab-dock-bg: var(--sa-glass-strong); /* 悬浮坞背景：取铬玻璃，模糊吃 --sa-blur */
+  --sa-tab-badge-bg: var(--sa-accent-strong); /* 角标底：取 accent 亮蓝 */
+  --sa-tab-badge-ink: var(--sa-accent-ink); /* 角标字：取 accent 深字 */
+  /* 列表底垫：页面末尾预留高度，防悬浮坞遮挡最后一行 */
+  --sa-tab-page-bottom: 104px;
 }
 
 /* 碎玻璃底：两层对角碎片渐变 + 底色，intensity 收敛，不抢内容 */
