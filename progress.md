@@ -9,7 +9,7 @@
 - 七页视图卡片化；表格改行卡；全局提示改右下 toast；设置页保留主题模式 / 字号缩放 / 关于。
 - 窗口关闭修复：`core:window:default` 不含写权限，capabilities 显式补 `allow-close/minimize/maximize/unmaximize/toggle-maximize/start-dragging/set-focus/is-maximized/set-title`；Tauri 实机点 ✕ 进程退出验证通过。
 - 移除悬浮底栏（开启后宽屏悬浮坞有布局 bug 且无使用场景）；侧栏改为默认展开、设置页不再暴露开关。
-- 文档整理：新增 `docs/ui.md`（结构 / 改动入口 / 防御性契约）；README/CONTRIBUTING/AGENTS 同步；删除 KSU 调研、Material 色板、动效方案、旧 findings/animation-plans。
+- 文档整理：新增 `docs/ui.md`（结构 / 改动入口 / 常见坑）；README/CONTRIBUTING/AGENTS 同步；删除 KSU 调研、Material 色板、动效方案、旧 findings/animation-plans。
 
 ## 2026-10-30 · Windows 调试链路
 

@@ -40,4 +40,4 @@ scripts\with-msvc.cmd cargo clippy --manifest-path src-tauri/Cargo.toml -- -D wa
 - `src/styles/`：`tokens-a.css`（唯一色源）/ `chart-palette.ts` / `ksu.css`（壳与组件）/ `views.css` / `bridge-a.css`
 - `scripts/`：`lint-tokens.mjs`（门禁）、`with-msvc.cmd`（Windows Rust/Tauri 环境包装）、`split-app.py` / `split-workbench.py`（历史拆分记录，可考据，不用再跑）
 
-界面结构、样式改动入口与防御性契约见 [界面与样式指南](docs/ui.md)。
+界面结构、样式改动入口与常见坑见 [界面与样式指南](docs/ui.md)。

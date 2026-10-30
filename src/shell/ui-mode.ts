@@ -1,9 +1,7 @@
 /* UI 偏好 —— 响应式单例 store（FlClash Windows 方案）。
    颜色只有深/浅/跟随系统（data-theme），字号缩放 0.9/1/1.1（data-text-scale），
-   侧栏展开状态持久化。
-   ⚠ 防御：localStorage 键 sa.colorMode / sa.textScale / sa.railExpanded 与
-   <html data-theme|data-text-scale> 都被 CSS 直接消费，改名/改属性会让用户偏好
-   静默重置或样式整块失效；uiMode 字段仅为旧配置兼容，不再影响视觉。 */
+   侧栏展开状态持久化。localStorage 键 sa.colorMode / sa.textScale / sa.railExpanded
+   与 <html data-theme|data-text-scale> 都被 CSS 直接消费；uiMode 字段仅为旧配置兼容。 */
 
 import { computed, reactive, watch } from 'vue';
 

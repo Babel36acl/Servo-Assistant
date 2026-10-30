@@ -1,6 +1,6 @@
 /* 一级导航页面表（壳与视图共享的唯一定义）。
-   ⚠ 防御：tests/communication.test.mjs 直接读取本文件并在 vm 里执行，
-   因此 pages / PageId / pageById 的导出签名不能改，也不要在此引入运行时依赖。 */
+   tests/communication.test.mjs 直接读取本文件并在 vm 里执行，
+   pages / PageId / pageById 的导出签名不要改，也不要引入运行时依赖。 */
 
 export const pages = [
   { id: 'connection', label: '设备与连接', caption: '导入配置 · 建立连接', icon: 'M7 3v4m10-4v4M5 7h14v4a7 7 0 0 1-14 0V7Zm7 11v3' },

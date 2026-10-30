@@ -32,7 +32,7 @@
 - 侧栏默认展开（220px），收起状态记在 `localStorage.sa.railExpanded`；顶部按钮可切换，设置页不再提供开关。
 - 图标右栏宽度阈值：`>=840px` 显示侧栏，`<840px` 显示底部导航，两者互斥。
 
-## 3. 不能破坏的契约（防御性清单）
+## 3. 改动前确认（容易踩的坑）
 
 1. **窗口按钮依赖权限**：`src-tauri/capabilities/default.json` 必须保留
    `core:window:allow-close / allow-minimize / allow-maximize / allow-unmaximize / allow-toggle-maximize / allow-start-dragging / allow-set-focus / allow-is-maximized / allow-set-title`。
