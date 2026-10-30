@@ -3,9 +3,10 @@
 // *.css / *.vue <style> / *.ts 内禁止出现 hex（#abc / #aabbcc）与 rgb()/hsl()。
 // 字号/间距裸写只告警（WARN），P2 迁移时再收紧为错误。
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, extname } from "node:path";
+import { join, extname, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const ROOT = new URL("../src", import.meta.url).pathname;
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "src");
 const ALLOW = new Set(['src/styles/tokens-a.css', 'src/styles/chart-palette.ts']);
 // 存量散写（P2/P3 迁移时清零）：冻结只删不加，门禁放行但单独计数。
 // P1 新建的 shell/views/features/composables 一律不许进这个名单。
@@ -41,7 +42,7 @@ let errors = 0;
 let warns = 0;
 let legacy = 0;
 for (const file of walk(ROOT)) {
-  const rel = "src" + file.slice(ROOT.length);
+  const rel = ("src" + file.slice(ROOT.length)).replace(/\\/g, "/");
   if (ALLOW.has(rel)) continue;
   const raw = readFileSync(file, "utf8");
   const text = file.endsWith(".vue") ? styleOfVue(raw) : file.endsWith(".ts") ? styleOfTs(raw) : raw;
