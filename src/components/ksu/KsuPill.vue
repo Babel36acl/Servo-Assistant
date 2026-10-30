@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** KSU 状态标签：default / ok / warn / bad / muted。 */
+/** 壳 UI 状态标签：default / ok / warn / bad / muted。 */
 const props = defineProps<{ tone?: 'default' | 'ok' | 'warn' | 'bad' | 'muted' }>();
 </script>
 

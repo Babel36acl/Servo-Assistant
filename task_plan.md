@@ -1,58 +1,56 @@
-# Servo Assistant · FlClash Windows 视觉改版任务计划
+# Servo Assistant · 界面改版任务计划
 
-> 2026-10-30 方向修正：用户否定了 VSCode 四区壳（P0–P3 旧成果）与 KSU-Miuix 复刻两版，明确「抄 FlClash 的 WIN 方案」。
-> 参考：FlClash v0.9.2（https://github.com/chen08209/FlClash，本机已装）；精确规格见 `docs/flclash-win-spec.md`，实拍见 `docs/reference/flclash-windows-dashboard.png`。
-> 旧计划（VSCode 壳 + 风格 A + Emil 动效）已作废，保留历史供追溯。
+> 视觉基准：**FlClash Windows 方案**（`docs/flclash-win-spec.md`，实拍 `docs/reference/flclash-windows-dashboard.png`）。
+> 改界面前先读 `docs/ui.md`（结构、入口、不能破坏的契约）。
 
-## 目标形态（FlClash Windows）
+## 目标形态
 
 ```
 ┌──────────────────────────────────────────────┐
 │ 36px 拖拽条 ·················· 窗口按钮 ─ □ ✕ │
-├────┬─────────────────────────────────────────┤
-│48px│ 页面大标题（24/28）        [圆形动作按钮] │
-│图标 │ ┌──────────┐ ┌──────────┐ ┌──────────┐ │
-│栏   │ │ 卡片 #191A1C            │ │          │ │
-│可展 │ └──────────┘ └──────────┘ └──────────┘ │
-│220 │ ┌─────────────────────────────────────┐ │
-│版本 │ │ 列表/图表大卡                         │ │
-└────┴─────────────────────────────────────────┘
+├──────┬───────────────────────────────────────┤
+│ 图标栏│ 页面大标题（24/28）      [动作区]       │
+│ 220px│ ┌──────────┐ ┌──────────┐ ┌─────────┐ │
+│ 可收 │ │ 卡片 #191A1C            │ │         │ │
+│ 48px │ └──────────┘ └──────────┘ └─────────┘ │
+│ 版本  │ ┌───────────────────────────────────┐ │
+└──────┴─┴───────────────────────────────────┴─┘
 ```
 
-- 表面四级：page `#000000` / card `#191A1C` / block `#252528` / inset `#2F3134`（深色 pureBlack 实拍）；浅色 `#ECEDF9 / #F9F9FF / #E6E8F3 / #E0E2ED`。
-- 主色 `#2F83FF`（深）/`#007AFF`（浅），成功 `#30D158`、警告 `#FF9F0A`、错误 `#FF453A`。
-- 字阶：display 40、title1 28、pageTitle 24、title2 22、headline 17（卡片头）、body 17、subheadline 15、footnote 13、caption 12。
-- 形状：卡片圆角 20（小卡 16），导航项 10，按钮 pill；无边框、无阴影、靠表面层级区分。
-- 栅格：宽 ≥860 四列、<860 两列，单列上限 440，间距 16；整页滚动。
+- 表面四级：page `#000` / card `#191A1C` / block `#252528` / inset `#2F3134`；浅色 `#ECEDF9 / #F9F9FF / #E6E8F3 / #E0E2ED`。
+- 主色 `#2F83FF`（深）/`#007AFF`（浅）；成功 `#30D158`、警告 `#FF9F0A`、错误 `#FF453A`。
+- 字阶（Apple Dynamic Type）：display 40、title1 28、pageTitle 24、headline 17、body 17、subheadline 15、footnote 13、caption 12；支持 90/100/110% 缩放。
+- 卡片圆角 20、无边框无阴影；栅格间距 16；`<840px` 侧栏收为底部 5 项导航。
 
-## 结构
+## 已完成
 
-- `src/shell/`：AppShell（拖拽条 + sidebar + main）、TitleBar（36px 拖拽条 + 窗口按钮）、RailNav（48/220 图标栏，仿 FlClash NavigationSidebar）、BottomNav（<840 底栏 5 项）、ui-mode（theme/rail/dock/字号缩放）、activities（7 页）。
-- `src/styles/`：tokens-a.css（FlClash 两套明暗 + --sa-* 兼容别名）、ksu.css（壳 + 卡片/行/控件/栅格）、views.css（视图微调）、styles.css（旧组件遗留，冻结）。
-- `src/components/ksu/`：KsuCard/KsuRow/KsuSwitch/KsuSegmented/KsuButton/KsuInput/KsuPill/KsuBadge/KsuEmpty/KsuSheet/KsuPage。
-- `src/views/`：连接 / 参数 / 监控 / 诊断 / 通信 / 审计 / 设置，全部 FlClash 卡片仪表盘化。
-- 窗口：`decorations:false` + 自绘拖拽条；Tauri 权限补 `core:window:allow-close/minimize/maximize/unmaximize/toggle-maximize/start-dragging/set-focus/is-maximized/set-title`；minWidth 720 / minHeight 480。
+- [x] 令牌：tokens-a.css 重写为 FlClash 四级表面 + Dynamic Type 字阶 + 字号缩放
+- [x] 壳：36px 自绘拖拽条（右上窗口按钮）、图标栏（默认展开 220，可收 48）、窄屏底部导航；旧应用栏/状态栏/命令面板/二级侧栏删除
+- [x] 七页视图卡片化（连接/参数/监控/诊断/通信/审计/设置），表格改 `.ksu-list` 行卡，全局提示改右下 toast
+- [x] 窗口关闭修复：`core:window:default` 缺写权限 → capabilities 显式补 9 条（实机点 ✕ 验证通过）
+- [x] 移除悬浮底栏（开启后宽屏走悬浮坞有布局 bug 且无使用场景）
+- [x] 侧栏默认展开，设置页不再提供该开关（侧栏顶部按钮可收起）
+- [x] Windows 调试链路：`scripts/with-msvc.cmd`（VS2022 + clang-cl + 仓库内 TMP）；VSCode 任务/调试配置可直接跑
+- [x] 文档：README / CONTRIBUTING / AGENTS / docs/ui.md / docs/flclash-win-spec.md；旧 KSU/Material/动效方案文档与 findings/animation-plans 删除
 
-## 阶段
+## 待办
 
-- [x] P0 规格：KSU 源码调研（docs/ksu-ui-spec.md，历史参考）+ FlClash 源码/实拍规格（docs/flclash-win-spec.md）
-- [x] P1 窗口关闭修复：capabilities 补窗口写权限；minWidth 降 720
-- [x] P2 KSU-Miuix 壳与视图第一版（已被 P3 替换）
-- [x] P3 FlClash 壳：拖拽条 + 48/220 侧栏 + 页面内标题 + 四级表面令牌 + 栅格类（task-5）
-- [x] P4 FlClash 视图：7 页卡片仪表盘重排（task-6、task-7 修缺）
-- [x] P5 验收：lint:tokens / build / test 全绿 + 1440×900 七页 / 浅色 / 800×1100 截图对照 FlClash（Lead 复核）
-- [ ] P6 收尾：task_plan/progress/docs 更新，原子化中文提交（进行中）
+- [ ] 实机验收拖拽区、最大化/还原（关闭已验证；本机沙箱跑 Tauri 需 portable.marker，正常桌面直接 `pnpm tauri dev`）
+- [ ] 旧 `src/styles.css` 存量裸字号/散写色值清理（`lint:tokens` 目前仅告警；旧组件删完再动）
+- [ ] Linux 界面冒烟：DEB/RPM/AppImage 启动后确认无 WebView2 相关假设泄漏到前端
+- [ ] 每次改界面后补 1440×900 + 800×1100 截图对照（命令见 docs/ui.md）
 
 ## 验收
 
-- `pnpm lint:tokens` / `pnpm build` / `pnpm test` 全绿。
-- 截图与 `docs/reference/flclash-windows-dashboard.png` 同语言：黑底、#191A1C 卡、蓝色主色、大标题、栅格卡片、行内控件右对齐。
-- 窗口 ✕ 可关；1440/900/800 三档无横滚、无重叠、无「堆到一起」。
-- 保留全部设备调试功能与 IPC 契约；测试直读的 `src/shell/activities.ts` 导出不变。
+- `pnpm lint:tokens` / `pnpm build` / `pnpm test` 全绿；改到 Rust 侧另跑 `scripts\with-msvc.cmd cargo test/clippy`。
+- 1440×900 与 800×1100 无横滚、卡片栅格无空洞、页面标题不挤、窗口按钮可点。
+- 保留全部设备调试功能、IPC 契约与测试直读的导出。
 
-## 遇到的错误
+## 已知坑
 
-| 错误 | 尝试 | 解决 |
+| 现象 | 根因 | 处理 |
 |---|---|---|
-| 自绘标题栏 ✕ 无效 | 检查 `getCurrentWindow().close()` | `core:window:default` 不含 `allow-close` 等写权限 → capabilities 显式补 9 条 |
-| 两版风格反复被否 | KSU 安卓复刻 / Miuix 双皮肤 | 改为 FlClash Windows 单视觉体系（同一家族、现成桌面实现） |
+| 自绘标题栏 ✕ / 最小化 / 最大化无效 | `core:window:default` 只有只读能力 | capabilities 显式补 `core:window:allow-*` 写权限，别删 |
+| VSCode 里 cargo / tauri dev 全挂 | 普通终端缺 MSVC/SDK 环境；本机 cl/c1.dll D8050 | 一律走 `scripts\with-msvc.cmd`（VS2022 + clang-cl），见 CONTRIBUTING |
+| 卡片栅格出现大片空洞 | 混合高度卡片同处一行，行高被最高卡撑开 | 用 `.ksu-columns` 双列各自堆叠，或让短卡跨列/整行 |
+| 提示条把页面顶下去 | 常驻 notice 占据文档流 | 全局横幅固定为右下 toast，不参与布局 |

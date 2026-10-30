@@ -5,7 +5,10 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 /** FlClash Windows 顶部拖拽条（36px）：
  *  - 整条可拖拽（data-tauri-drag-region），双击最大化
  *  - 右上角窗口按钮 44×36（关闭 hover 变红），不占用标题/设置图标
- *  - 浏览器预览下 Tauri API 会抛错，统一 try/catch 兜底 */
+ *  - 浏览器预览下 Tauri API 会抛错，统一 try/catch 兜底
+ *  ⚠ 防御：窗口按钮依赖 src-tauri/capabilities/default.json 里的
+ *  core:window:allow-close/minimize/toggle-maximize/start-dragging 等写权限，
+ *  core:window:default 不含它们；删权限会让按钮静默失效。 */
 const maximized = ref(false);
 
 async function minimize(): Promise<void> {

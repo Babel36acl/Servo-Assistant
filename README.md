@@ -42,20 +42,27 @@ SOEM 与 WinPcap SDK 头文件的许可证及修改说明见 [第三方来源](s
 
 ## 开发
 
-环境要求：Rust stable MSVC、Microsoft C++ Build Tools、WebView2、Node.js 和 pnpm。
+环境要求：Rust stable MSVC、Visual Studio 2022「Desktop development with C++」、LLVM（clang-cl）、WebView2、Node.js 和 pnpm。
+
+Windows 本机的 Rust / Tauri 命令必须经 `scripts\with-msvc.cmd`（载入 VS2022 环境、C 编译走 clang-cl、临时目录放仓库 `.tmp`）；直接 `cargo` 会因缺 Windows SDK 环境而失败。VSCode 的 `.vscode/tasks.json` 已内置这一层。
 
 ```powershell
 pnpm install
-pnpm tauri dev
+scripts\with-msvc.cmd pnpm tauri dev   # 桌面壳
+pnpm dev                               # 纯网页预览 http://localhost:1420
 ```
 
 验证命令：
 
 ```powershell
+pnpm lint:tokens
 pnpm build
-cargo test --manifest-path src-tauri/Cargo.toml
-cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+pnpm test
+scripts\with-msvc.cmd cargo test --manifest-path src-tauri/Cargo.toml
+scripts\with-msvc.cmd cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 ```
+
+界面结构、样式改动入口与“不要动”的约束见 [界面与样式指南](docs/ui.md)。
 
 ## 使用
 
@@ -66,7 +73,7 @@ cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 
 [通用示例 Profile](examples/servo-profile.example.json)仅用于展示格式和模拟器测试，其中地址、范围和操作码均为虚构值，不得直接用于真实设备。
 
-界面仿 FlClash Windows 方案（与 KernelSU 同一视觉体系，规格见 [FlClash Windows 视觉方案](docs/flclash-win-spec.md)）：36px 自绘拖拽条 + 右上窗口按钮，左侧 48px 图标栏（可展开 220px），页面内大标题 + 卡片栅格仪表盘；深色为纯黑页 + `#191A1C` 卡片四级表面，主色 `#2F83FF`；设置页可选深色/浅色/跟随系统、侧栏展开与 90/100/110% 字号。七个工作区为设备与连接、参数工作区、实时监控、通讯诊断、通信工作台（录制解析 / EtherCAT 主站双 Tab）、操作证据和设置；窄窗口（<840px）图标栏收为底部 5 项导航。自绘标题栏的最小化/最大化/关闭走 `core:window:*` 权限调用原生窗口。
+界面仿 FlClash Windows 方案（视觉规格见 [FlClash Windows 视觉方案](docs/flclash-win-spec.md)）：36px 自绘拖拽条 + 右上窗口按钮，左侧图标栏默认展开（220px，可收成 48px 图标栏），页面内大标题 + 卡片栅格仪表盘；深色为纯黑页 + `#191A1C` 卡片四级表面，主色 `#2F83FF`。设置页提供深色/浅色/跟随系统与 90/100/110% 字号。七个工作区为设备与连接、参数工作区、实时监控、通讯诊断、通信工作台（录制解析 / EtherCAT 主站双 Tab）、操作证据和设置；窄窗口（<840px）图标栏收为底部 5 项导航。自绘标题栏的最小化/最大化/关闭走 `core:window:*` 权限调用原生窗口。
 
 ## 关键文件
 
@@ -75,12 +82,15 @@ cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 - `src-tauri/src/modbus.rs`：FC03/FC06、RTU CRC / ASCII LRC、异常响应和帧间隔
 - `src-tauri/src/runtime.rs`：串口独占、模拟器、安全写入和可选设备操作
 - `src-tauri/src/audit.rs`：SQLite 持久审计与快照存储
-- `src/App.vue`：应用壳装配、全局横幅、确认框与命令面板
-- `src/shell/`：自绘标题栏、图标栏、二级侧栏、状态栏、命令面板
+- `src/App.vue`：页面切换、全局状态横幅、确认弹层
+- `src/shell/`：应用壳（自绘拖拽条 / 图标栏 / 窄屏底栏 / 主题与字号偏好）
+- `src/components/ksu/`：卡片、行、开关、分段、按钮等 UI 原语
 - `src/composables/useServo.ts`：应用状态单例
-- `src/views/`：六个工作区视图（懒加载）
+- `src/views/`：七个工作区视图（含设置）
 - `src/features/{recording,ethercat}/`：录制解析 / EtherCAT 主站
 - `src/styles/tokens-a.css`：设计令牌唯一色源（`pnpm lint:tokens` 门禁）
+- `src/styles/ksu.css`：壳与组件的布局/交互样式；`views.css` 只放视图微调
+- [docs/ui.md](docs/ui.md)：界面结构、改动入口与不能破坏的契约
 
 ## 验证边界
 

@@ -4,7 +4,7 @@ import KsuSheet from '../components/ksu/KsuSheet.vue';
 import { dockPageIds, morePageIds, morePageSet, pageById, type PageId } from './activities';
 
 /** 窄屏导航：最多 5 项（KSU 规则），4 个主页面 + 「更多」。
- *  贴底普通导航（Miuix NavigationBar：64 高，图标 26 + 12sp 标签），
+ *  贴底普通导航（64 高，图标 26 + 12sp 标签），
  *  「更多」用底部弹层补足诊断 / 审计 / 设置。 */
 const props = defineProps<{
   active: PageId;

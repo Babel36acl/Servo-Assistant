@@ -6,7 +6,7 @@ export interface KsuSegmentOption {
 </script>
 
 <script setup lang="ts">
-/** 分段控件：Miuix TabRow（12 圆角）/ Material 胶囊分段。用于界面风格、颜色模式。 */
+/** 分段控件：蓝底胶囊（FlClash 风格），用于主题模式/字号等互斥选项。 */
 const props = defineProps<{
   modelValue: string;
   options: readonly KsuSegmentOption[];

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
-/** KSU 设置行：左（图标）+ 标题/副标题 + 右侧控件 + 可选箭头。
+/** 壳 UI 设置行：左（图标）+ 标题/副标题 + 右侧控件 + 可选箭头。
  *  clickable 时渲染成 <button>；否则静态 div（列表里用 ksu-row--static 语义）。 */
 const props = defineProps<{
   title?: string;

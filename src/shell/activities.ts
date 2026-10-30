@@ -1,6 +1,6 @@
 /* 一级导航页面表（壳与视图共享的唯一定义）。
-   tests/communication.test.mjs 会直接读取本文件并在 vm 里执行，
-   因此导出名 pages / PageId / pageById 不可改签名，也不要在此引入运行时依赖。 */
+   ⚠ 防御：tests/communication.test.mjs 直接读取本文件并在 vm 里执行，
+   因此 pages / PageId / pageById 的导出签名不能改，也不要在此引入运行时依赖。 */
 
 export const pages = [
   { id: 'connection', label: '设备与连接', caption: '导入配置 · 建立连接', icon: 'M7 3v4m10-4v4M5 7h14v4a7 7 0 0 1-14 0V7Zm7 11v3' },
@@ -19,11 +19,10 @@ export const pages = [
 
 export type PageId = (typeof pages)[number]['id'];
 
-/** 宽屏 rail 的全部入口（Miuix NavigationRail 放得下 7 项）。 */
+/** 宽屏图标栏的全部入口（7 项）。 */
 export const railPages = pages;
 
-/** 窄屏底部栏最多 5 项：4 个主页面 + 「更多」浮层。
- *  KSU 规则：bottom bar 不超过 5 项，多了会挤到不可读。 */
+/** 窄屏底部栏最多 5 项：4 个主页面 + 「更多」浮层（多了会挤到不可读）。 */
 export const dockPageIds = ['connection', 'monitor', 'communication', 'parameters'] as const;
 
 /** 「更多」浮层里的次级入口（窄屏借此可达全部 7 页）。 */

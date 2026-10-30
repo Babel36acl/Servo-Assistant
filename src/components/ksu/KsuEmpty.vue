@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** KSU 空态：图标 / 标题 / 说明 / 操作按钮。 */
+/** 壳 UI 空态：图标 / 标题 / 说明 / 操作按钮。 */
 const props = defineProps<{ title?: string; desc?: string }>();
 </script>
 

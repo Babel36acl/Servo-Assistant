@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** KSU 角标：数字（primary 底）或纯圆点（6dp，Badge.kt:182）。 */
+/** 壳 UI 角标：数字（primary 底）或纯圆点。 */
 const props = defineProps<{ count?: string | number; dot?: boolean; label?: string }>();
 </script>
 

@@ -1,6 +1,7 @@
-/* 桥接层：把旧页面/旧组件的变量名重指向新 KSU token。
+/* 桥接层：把旧页面/旧组件的变量名重指向 tokens-a.css 的 FlClash token。
    只许出现 var(...)，不许出现任何色值——lint:tokens 同样盯着本文件。
-   旧 --sa-* 与 --ksu-* 的对应关系定义在 tokens-a.css（四套色板）。 */
+   旧 --sa-* 与 --ksu-* 的对应关系定义在 tokens-a.css。
+   防御：旧组件（ScopeChart 等）仍读这层变量；删旧组件前不要删本文件，也不要在这里写色值。 */
 
 :root {
   --bg: var(--sa-bg-0);

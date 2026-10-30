@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** KSU 页面骨架：页头（标题 + 副标题 + 右侧操作）+ 分组卡容器 + 底部留白。 */
+/** 壳 UI 页面骨架：页头（标题 + 副标题 + 右侧操作）+ 分组卡容器 + 底部留白。 */
 const props = defineProps<{ title: string; sub?: string }>();
 </script>
 

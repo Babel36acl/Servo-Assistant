@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** KSU 输入框（44 高 / 12 圆角 / field 底色）。 */
+/** 壳 UI 输入框（44 高 / 12 圆角 / field 底色）。 */
 const props = defineProps<{
   modelValue: string | number;
   type?: 'text' | 'number' | 'search' | 'password' | 'url';

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** KSU 开关：Miuix 49×28（无图标）/ Material 52×32（选中带勾），尺寸由 token 决定。 */
+/** 壳 UI 开关：52×32（选中带勾），尺寸/颜色全部由 token 决定。 */
 const props = defineProps<{
   modelValue: boolean;
   disabled?: boolean;

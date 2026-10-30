@@ -68,7 +68,7 @@ FlClash 用四级表面，深色只升不降（`lib/ui/surface.dart:9-38`）：
 | 成功/警告/错误 | 绿 `#30D158`/`#34C759` 系、橙 `#FF9F0A`、红 `#FF453A`/`#FF3B30` | `lib/views/dashboard/style.dart` success/warning 扩展 |
 | 开关开态 | `primary` 轨道 + `onPrimary` 拇指；关态 `surfaceContainerHighest` | 截图 + M3 默认 |
 
-> 落地：用 `@material/material-color-utilities` 的 `SchemeContent(seed=#007AFF)` 生成深/浅两套（脚本见本仓库 docs/material-palette.md 附录方法，把 seed 换掉即可）；生成后把页/卡/块/内嵌四级取值直接落 token。
+> 落地：实际取值已完成并写入 `tokens-a.css`；如需按种子重新生成，用 `@material/material-color-utilities` 的 `SchemeContent(seed=#007AFF)` 生成深/浅两套再替换 token。
 
 ## 4. 字阶（Apple Dynamic Type，1dp=1px）
 
@@ -136,14 +136,15 @@ FlClash 用四级表面，深色只升不降（`lib/ui/surface.dart:9-38`）：
 | 诊断 | 警告/状态卡 + 采集设置卡 + 稳定性结果大卡 + 统计指标卡 |
 | 通信 | Tab 分段（pill）+ 录制卡组 / EtherCAT 卡组，日志块用 `block` 底、行距 2 |
 | 审计 | 筛选卡 + 日志行大卡（时间 footnote 弱化） |
-| 设置 | 外观卡（主题深/浅/跟随系统、主色种子、字号缩放）+ 关于卡 |
+| 设置 | 外观卡（主题深/浅/跟随系统、字号缩放）+ 关于卡 |
 
-## 8. 与现有实现的差异（必须改掉）
+## 8. 落地状态（实现对照）
 
-1. 现在是「顶部 52px 应用栏 + 左侧 7 项带文字 rail」→ 改为「32–40px 拖拽条（右上窗口按钮）+ 48px 纯图标栏（可展开 220）+ 页面内大标题」。
-2. 现在页面标题在应用栏里 → 移到内容区顶部，24–28px。
-3. 现在卡片圆角 16、底色偏 Miuix 蓝黑 → 改 FlClash 表面层级（page/card/block/inset）与 20 圆角、卡间距 16。
-4. 现在行高 56、标题 17（接近）→ 保持，副标题改 15、辅助 13。
-5. 现在主色 Miuix `#277AF7`/Material `#455E91` → FlClash 种子 `#007AFF` 生成的 vivid 色板（深色 primary ≈ `#4C8DFF`）。
-6. 删掉 Miuix/Material 双皮肤切换（FlClash 是一套体系），设置页改为「深色/浅色/跟随系统 + 主色种子 + 字号缩放」；`data-ui` 属性可保留但只作兼容。
-7. 不要在卡片里堆按钮：每卡 ≤1 主操作，其余进卡头动作或行内。
+已按本规格落地：
+
+- 36px 自绘拖拽条 + 右上窗口按钮；左侧图标栏默认展开 220px、顶部按钮可收成 48px；页面大标题在内容区（24/28）。
+- FlClash 四级表面（page/card/block/inset）、圆角 20、卡间距 16、无边框无阴影；字阶与 90/100/110% 字号缩放落进 `tokens-a.css`。
+- 七页卡片化；`<840px` 收底部 5 项导航。
+- 设置页只保留 **深色 / 浅色 / 跟随系统** 与 **字号缩放**：FlClash 的主色种子、模糊开关、悬浮底栏均未做（悬浮底栏试过后因布局 bug 移除，用户无使用场景）。
+- 代码里的 `ksu-*` 类名是早期命名，现指 FlClash 皮肤；扩展/维护指引见 `docs/ui.md`。
+- 不在卡片里堆按钮：每卡 ≤1 主操作，其余进卡头动作或行内。

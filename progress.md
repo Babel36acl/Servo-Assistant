@@ -1,43 +1,23 @@
-# progress · 会话日志
+# progress · 变更日志（界面与开发链路）
 
-## 2026-10-30（规划）
-- 通读 App.vue / styles.css / components / api.ts / tauri.conf.json，确认 monolith + 散写 + EtherCAT/录制杂糅三宗罪
-- 落盘 task_plan.md / findings.md / progress.md；风格 A 与 VSCode 四区 + palette + 1024 单列 + 44px 方案已定，未动手改代码
-## 2026-10-30（P0 落地）
-- 建 `src/styles/tokens-a.css`：71 个 `--sa-*` 变量，色/字/距/角/影/动效六表 + 壳尺寸/断点/触控/层级；地基 #0A1628，Maple Mono 全局，圆角主 12，阴影两档
-- 建 `scripts/lint-tokens.mjs` + `pnpm lint:tokens`：新文件散写色值直接拦下；存量 4 文件冻结放行待迁（styles.css / CommunicationWorkbench / RecordingHistory / ScopeChart）
-- `index.html` theme-color 切到 #0A1628；旧 styles.css 冻结只删不加
-- 验证：`pnpm lint:tokens` 通过（EXIT:0），`node --test` 23/23 绿
-## 2026-10-30（P1–P3 落地，一次到底）
-- P1 壳：`src/shell/`（activities/TitleBar/ActivityBar/SideBar/StatusBar/CommandPalette/AppShell）+ `shell.css` + `bridge-a.css`（旧变量重指向风格 A）；`main.ts` 追加三层 import；`tauri.conf.json` 开 `decorations:false`；`index.html` 摘 Google 字体外链
-- P2 拆页：`scripts/split-app.py` 机械切分 → `src/composables/useServo.ts`（109 名单例）+ `src/views/` 六视图 + 瘦 App.vue（壳/横幅/弹窗/面板）；communication 测试夹具改直测 `createServo()`
-- P3 分家：`scripts/split-workbench.py` → `features/recording/RecordingSessionView.vue`（录制+浏览，`applyMailboxes` expose）；`features/ethercat/EthercatMasterView.vue`（+activity 带从站数）；`views/CommunicationView.vue` 变两 Tab 编排 + 事件拼接；`RecordingLibrary/History` 搬家
-- 调色板收口：`src/styles/chart-palette.ts` 唯一 JS 色源（CHART/HISTORY），tokens-a.css 镜像 `--sa-chart-*/--sa-hist-*` + `--sa-text-10/11`；lint 扩到 `.ts`；`scopePalette`/`colors`/内联数组三处并入
-- 验证：`lint:tokens` 过（存量仅 styles.css），`vue-tsc` 零错，`node --test` 23/23，`vite build` 66 模块 1.31s
-## 2026-10-30（依赖与协作收尾）
-- 全部依赖升最新：vue 3.5.44 / vite 8.3.5 / plugin-vue 6 / vue-tsc 3.3.13 / tauri 2.12.4 / TS 退 5.9.3（TS 7 与工具链不兼容）；`cargo update`（锁文件跟进）
-- 新工具链兼容修三处：chartSeries 进 computed、confirmField 显式读、调色板标 readonly string[]
-- Dependabot 5 个 open（vite/launch-editor 高危×1 中×3 低×1）随 vite 8.3.5 推送自动关闭，现 10/10 fixed
-- 协作配置：dependabot 周检、PR/Issue 模板、CONTRIBUTING、SECURITY、AGENTS、.editorconfig、CI 加 lint:tokens、README 认领 Babel36acl
-- 本机缺 glib 系统库，`cargo test`/`clippy` 走 CI Windows；两提交已推：`2a95645`（deps）、`2193c2f`（repo）
-- 遗留：styles.css 64 裸字号 + 间距 px（P5 统一收）；`tauri dev` 实机验拖拽/最大化；平板 1024 真机验抽屉 + 44 触控
-- 验证：每阶段 `pnpm build`，P4 起加 `pnpm test` + `cargo test --manifest-path src-tauri/Cargo.toml` + clippy `-D warnings`
-## 2026-10-30（方向修正：FlClash Windows 视觉体系）
-- 用户否定 VSCode 四区壳与 KSU-Miuix 复刻两版，指定「抄 FlClash（chen08209/FlClash）的 WIN 方案」：同属 KSU 视觉体系、现成 Windows 实现
-- 规格：`docs/flclash-win-spec.md` + `docs/reference/flclash-windows-dashboard.png`（本机 FlClash v0.9.2 实拍取色）；KSU 调研文档 `docs/ksu-ui-spec.md` 标注为历史参考
-- 令牌重写：深色「纯黑页 #000 / 卡 #191A1C / 块 #252528 / 内嵌 #2F3134」四级表面，主色 #2F83FF、成功 #30D158、警告 #FF9F0A、错误 #FF453A；浅色 #ECEDF9/#F9F9FF/#E6E8F3；Apple Dynamic Type 字阶全部 token 化并支持 90/100/110% 缩放
-- 壳重写：36px 自绘拖拽条 + 右上窗口按钮（关闭失败根因 `core:window:default` 不含写权限，已补 allow-close/minimize/maximize/unmaximize/toggle-maximize/start-dragging/set-focus/is-maximized/set-title）；左侧 48px 图标栏可展开 220px（仿 FlClash NavigationSidebar）；删除应用栏/命令面板/状态栏；窄屏 <840 收 5 项底栏
-- 视图：7 页全部 FlClash 卡片仪表盘化（`.ksu-grid/.ksu-span-*/.ksu-stat/.ksu-display/.ksu-columns`），连接页双列、诊断双列、监控 6 指标卡 + 全宽曲线、表格改行卡、全局横幅改右下 toast
-- 设置页：主题模式 深/浅/跟随系统、侧栏展开、悬浮底栏、字号缩放 90/100/110%；关于信息
-- 验证：`pnpm lint:tokens` / `pnpm build`（vue-tsc 0 错）/ `pnpm test` 23/23 全绿；Edge 无头截图覆盖 1440×900 七页深色、浅色、800×1100 底栏；`cargo build` 仍卡在 native/bridge.c 的 cl.exe（本机 MSVC/依赖头问题，非本次改动），Tauri 实机点击关闭待 `pnpm tauri dev` 验
-## 2026-10-30（Windows 调试链路修复：VSCode 任务 / cargo / tauri）
-- 症状：VSCode 里 Rust/Clippy/Tauri dev 任务全跑不起来。根因三层：
-  1) 普通终端无 MSVC/Windows SDK 环境，`cl.exe` 在 `native/bridge.c` 找不到 `winsock2.h`；
-  2) 本机 VS18 预览版 Build Tools 与 VS2022 的 `cl.exe/c1.dll` 在 cargo build script 下稳定报 D8050（手动同参数可编译），大文件 `sqlite3.c` 必挂；
-  3) cargo test 的临时目录被环境 ACL 拒绝，报 os error 5。
-- 修复：新增 `scripts/with-msvc.cmd`（优先 VS2022 → VsDevCmd → `CC=CXX=clang-cl` → TMP 指向仓库 `.tmp`），VSCode 任务全部改经它；`launch.json` 补 preLaunchTask（Vite 后台任务 + 1420 ready 匹配）；`vite dev` 端口说明改 1420。
-- SOEM 兼容 clang-cl 的两处小补丁：`osal.h` 线程原型改 `void **`；`osal_win32.h` 删除 clang 误报冲突的 `osal_gettimeofday` 原型（定义仍在 osal.c，无其它调用方），已记入 `src-tauri/native/README.md`。
-- 验证：`cargo build`、`cargo test --lib`（60 passed, 1 ignored）、`cargo clippy -D warnings` 全过；`scripts\with-msvc.cmd pnpm tauri dev` 实机起窗（1440×900、无边框自绘标题栏正常），点 ✕ 后进程正常退出——窗口关闭修复实机确认。
-## 2026-10-30（移除悬浮底栏）
-- 用户反馈悬浮底栏开启有 bug 且用不到：删除设置页「悬浮底栏」行、ui-mode 的 floatingDock 状态/持久化/`?dock=` 覆盖、AppShell 的 is-dock 分支、BottomNav 悬浮坞分支与对应 CSS；保留 <840px 普通贴底导航，README 与注释同步。
-- 验证：pnpm lint:tokens / build / test 23/23 全绿；设置页与 800×1100 窄屏截图复核。
+> 只记与当前实现相关的里程碑；更早的 VSCode 四区壳 / 风格 A / 动效实验已废弃，见 git 历史。
+
+## 2026-10-30 · FlClash Windows 改版
+
+- 视觉基准定为 FlClash Windows（`docs/flclash-win-spec.md` + 实拍 `docs/reference/flclash-windows-dashboard.png`）：纯黑页 + `#191A1C` 卡片四级表面、Dynamic Type 字阶、主色 `#2F83FF`、卡片圆角 20、栅格间距 16。
+- 壳重写：36px 自绘拖拽条 + 右上窗口按钮；图标栏默认展开 220（可收 48）；`<840px` 收底部 5 项导航。删除应用栏 / 状态栏 / 命令面板 / 二级侧栏。
+- 七页视图卡片化；表格改行卡；全局提示改右下 toast；设置页保留主题模式 / 字号缩放 / 关于。
+- 窗口关闭修复：`core:window:default` 不含写权限，capabilities 显式补 `allow-close/minimize/maximize/unmaximize/toggle-maximize/start-dragging/set-focus/is-maximized/set-title`；Tauri 实机点 ✕ 进程退出验证通过。
+- 移除悬浮底栏（开启后宽屏悬浮坞有布局 bug 且无使用场景）；侧栏改为默认展开、设置页不再暴露开关。
+- 文档整理：新增 `docs/ui.md`（结构 / 改动入口 / 防御性契约）；README/CONTRIBUTING/AGENTS 同步；删除 KSU 调研、Material 色板、动效方案、旧 findings/animation-plans。
+
+## 2026-10-30 · Windows 调试链路
+
+- `scripts/with-msvc.cmd`：优先 VS2022 → `VsDevCmd` → `CC/CXX=clang-cl` → `TMP` 指向仓库 `.tmp`；解决普通终端缺 SDK 头、cl/c1.dll D8050、cargo test 临时目录被拒三类失败。
+- `.vscode/tasks.json` / `launch.json`：Rust/Clippy/Tauri dev 全部经包装脚本；F5 网页调试先起 Vite 后台任务并等 1420；两份配置纳入版本库。
+- SOEM 两处 clang-cl 兼容补丁（`osal.h` 线程原型 `void **`；`osal_win32.h` 去掉被误报冲突的 `osal_gettimeofday` 原型），记录在 `src-tauri/native/README.md`。
+- 验证：`cargo build` / `cargo test --lib` 60 passed / `cargo clippy -D warnings` 全过；`tauri dev` 实机起窗并可关闭。
+
+## 2026-10-30 · 前端门禁
+
+- `pnpm lint:tokens` / `pnpm build` / `pnpm test`（23/23）保持全绿；旧 `styles.css` 散写告警仍在（冻结，待旧组件清理）。

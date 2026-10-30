@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** KSU 按钮：default（描边）/ primary / tonal / ghost / danger，支持 sm / block。 */
+/** 壳 UI 按钮（FlClash 风格）：default（描边）/ primary / tonal / ghost / danger，支持 sm / block。 */
 const props = defineProps<{
   variant?: 'default' | 'primary' | 'tonal' | 'ghost' | 'danger';
   sm?: boolean;

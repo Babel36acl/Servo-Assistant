@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue';
 
-/** KSU 弹层：对话框（默认，windowDimming 遮罩）或底部弹层（variant='bottom'）。
+/** 壳 UI 弹层：对话框（默认，windowDimming 遮罩）或底部弹层（variant='bottom'）。
  *  自绘结构，替代旧的 .modal-overlay/.modal；遮罩点按与 Esc 都会 emit close。 */
 const props = defineProps<{
   open: boolean;

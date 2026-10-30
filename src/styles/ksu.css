@@ -2,6 +2,8 @@
    ksu.css —— FlClash Windows 壳 + 组件样式（唯一布局实现）
    依据：docs/flclash-win-spec.md（FlClash v0.9.2，数值标注源文件）与本机实拍。
    色值一律走 tokens-a.css 的 var(--ksu-*)，本文件禁止 hex / rgb / hsl。
+   ⚠ 防御：.ksu-* 类是 views/、shell/、components/ksu/ 共用的公共契约，
+   改类名/结构前先 rg 引用；视图专属微调放 views.css，不要在这里堆。
    结构：
      .ksu-app > .ksu-titlebar(36px 拖拽条 + 右上窗口按钮)
                 + .ksu-body(.ksu-rail 48/220 + .ksu-main 整页滚动)
