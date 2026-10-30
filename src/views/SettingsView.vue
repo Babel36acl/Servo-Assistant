@@ -6,12 +6,10 @@ import KsuPage from '../components/ksu/KsuPage.vue';
 import KsuPill from '../components/ksu/KsuPill.vue';
 import KsuRow from '../components/ksu/KsuRow.vue';
 import KsuSegmented from '../components/ksu/KsuSegmented.vue';
-import KsuSwitch from '../components/ksu/KsuSwitch.vue';
 import { APP_REPO, APP_VERSION } from '../shell/app-info';
 import {
   resolvedTheme,
   setColorMode,
-  setRailExpanded,
   setTextScale,
   uiStore,
   type ColorMode,
@@ -19,8 +17,8 @@ import {
 } from '../shell/ui-mode';
 
 /** 设置页（FlClash 语言）：分组卡 + 设置行，
- *  外观 = 主题模式 / 侧栏展开 / 字号缩放；关于 = 版本 / 仓库 / 当前主题。
- *  视觉只有一套体系，不再有 Miuix/Material 切换。 */
+ *  外观 = 主题模式 / 字号缩放；关于 = 版本 / 仓库 / 当前主题。
+ *  改这里前确认 ui-mode.ts 的持久化键没变，否则用户偏好会重置。 */
 const themeModeOptions = [
   { value: 'dark', label: '深色' },
   { value: 'light', label: '浅色' },
@@ -49,10 +47,6 @@ function onThemeMode(value: string): void {
 
 function onTextScale(value: string): void {
   setTextScale(Number(value) as TextScale);
-}
-
-function onRailExpanded(value: boolean): void {
-  setRailExpanded(value);
 }
 
 async function copyRepo(): Promise<void> {
@@ -84,16 +78,6 @@ async function copyRepo(): Promise<void> {
                 :options="themeModeOptions"
                 label="主题模式"
                 @update:modelValue="onThemeMode"
-              />
-            </template>
-          </KsuRow>
-
-          <KsuRow title="展开侧栏" sub="图标栏展开为图标 + 文字（48 → 220）">
-            <template #control>
-              <KsuSwitch
-                :model-value="uiStore.railExpanded"
-                label="展开侧栏"
-                @update:modelValue="onRailExpanded"
               />
             </template>
           </KsuRow>

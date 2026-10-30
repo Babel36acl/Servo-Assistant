@@ -1,7 +1,9 @@
 /* UI 偏好 —— 响应式单例 store（FlClash Windows 方案）。
    颜色只有深/浅/跟随系统（data-theme），字号缩放 0.9/1/1.1（data-text-scale），
-   侧栏展开状态持久化。上一版 Miuix/Material 的 uiMode 仅保留字段兼容，
-   不再参与任何视觉分支（FlClash 只有一套视觉体系）。 */
+   侧栏展开状态持久化。
+   ⚠ 防御：localStorage 键 sa.colorMode / sa.textScale / sa.railExpanded 与
+   <html data-theme|data-text-scale> 都被 CSS 直接消费，改名/改属性会让用户偏好
+   静默重置或样式整块失效；uiMode 字段仅为旧配置兼容，不再影响视觉。 */
 
 import { computed, reactive, watch } from 'vue';
 
@@ -66,8 +68,8 @@ export const uiStore = reactive({
   /** 兼容字段：FlClash 单视觉体系，不再暴露切换 UI */
   uiMode: readUiMode(),
   colorMode: readColorMode(),
-  /** 侧栏展开态（FlClash NavigationSidebar 48 ⇄ 220） */
-  railExpanded: readBool(KEY_RAIL_EXPANDED, false),
+  /** 侧栏展开态（FlClash NavigationSidebar 48 ⇄ 220）；默认展开，侧栏顶部按钮可收起 */
+  railExpanded: readBool(KEY_RAIL_EXPANDED, true),
   /** 字号缩放（Apple Dynamic Type 基准 1.0） */
   textScale: readTextScale(),
 });
