@@ -31,3 +31,4 @@ scripts\with-msvc.cmd pnpm tauri dev
 - 发布由推送 `vX.Y.Z` 标签触发，`main` 推送不自动构建；普通 PR 不改版本号，发版前更新 `docs/release-notes.md`。
 - 无界面环境用 `vite build` + `node --test` 验证，不跑 `tauri dev`。
 - 旧 Profile/录制格式是兼容性契约，改格式先更新 `docs/`；Profile 契约唯一来源是 `docs/profile-v1.md`。
+- Profile 制作 Skill 只保留 `.agents/skills/servo-profile-from-pdf/SKILL.md` 一份，不要在 docs/README 复制第二份可执行提示词。

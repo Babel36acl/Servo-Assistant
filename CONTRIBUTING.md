@@ -47,6 +47,7 @@ Rust 当前基线为 71 项（另 1 项崩溃恢复子进程入口按设置忽�
 - `src/features/`：`recording/`（录制解析）、`ethercat/`（主站、连接入口）、`modbus/`（寄存器扫描）
 - `src/styles/`：`tokens-a.css`（唯一色源）/ `chart-palette.ts` / `ksu.css` / `views.css`
 - `src-tauri/src/`：`modbus.rs` / `modbus_tcp.rs` / `runtime.rs` / `discovery.rs` / `scan.rs` / `master.rs` / `ethercat.rs` / 录制与索引模块
+- `.agents/skills/servo-profile-from-pdf/`：从伺服手册生成 Profile 的 AI Skill（仓库只保留这一份，不要在 docs 复制第二份）
 - `scripts/`：`lint-tokens.mjs`、`with-msvc.cmd`、`release-version.ps1`、`package-portable.ps1`、`verify-linux-package.sh`
 
 界面结构、样式改动入口与常见坑见 [界面与样式指南](docs/ui.md)。

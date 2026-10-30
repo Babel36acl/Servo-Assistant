@@ -56,11 +56,18 @@
 
 [通用示例 Profile](examples/servo-profile.example.json) 仅展示格式，地址/范围/操作码均为虚构值，不得直接用于真实设备。
 
+## Profile 制作 Skill（AI）
+
+仓库只维护这一份 Profile 制作 Skill：[`servo-profile-from-pdf`](.agents/skills/servo-profile-from-pdf/SKILL.md)。它用于从指定型号的伺服驱动器手册提取 Modbus 通信设置、参数和只读状态量，生成 Servo Profile 1.0 JSON，并要求逐字段保留 PDF 页码证据；手册未说明的地址、缩放、默认值或读写属性会列为待确认，不用示例或其他型号补猜。
+
+该 Skill 只做离线配置：不连接设备、不发 Modbus 请求、不写参数，也不把手册或厂商参数库加入仓库。生成结果需人工审阅，并遵循 [Profile 1.0 契约](docs/profile-v1.md)；应用本身不读取 PDF。
+
 ## 文档
 
 | 文档 | 内容 |
 |---|---|
 | [Profile 1.0](docs/profile-v1.md) | Profile 字段、地址/缩放、写入风险、串口与查找规则 |
+| [Profile 制作 Skill](.agents/skills/servo-profile-from-pdf/SKILL.md) | 从伺服手册提取参数并生成 Profile 的 AI 工作流（仓库唯一） |
 | [EtherCAT 与录制](docs/ethercat-and-recording.md) | 主站范围、对象字典、诊断、录制格式与验收边界 |
 | [界面与样式](docs/ui.md) | 视图结构、样式入口与不能破坏的契约 |
 | [FlClash Windows 规格](docs/flclash-win-spec.md) | 视觉规格与令牌来源 |
