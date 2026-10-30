@@ -1,0 +1,125 @@
+{
+  // 编译运行验证一键入口：Ctrl+Shift+P → Tasks: Run Task
+  // 门禁顺序与 CONTRIBUTING.md 一致：lint → build → test → cargo
+  // Rust / Tauri 任务必须经 scripts\with-msvc.cmd：普通终端没有 MSVC/Windows SDK
+  // 环境，直接 cargo 会在 native/bridge.c（winsock2.h）和 libsqlite3-sys 上失败。
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "安装依赖",
+      "type": "shell",
+      "command": "pnpm install",
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "门禁：lint:tokens",
+      "type": "shell",
+      "command": "pnpm lint:tokens",
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "构建：build",
+      "type": "shell",
+      "command": "pnpm build",
+      "detail": "vue-tsc --noEmit && vite build",
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "测试：前端",
+      "type": "shell",
+      "command": "pnpm test",
+      "detail": "node --test tests/*.test.mjs（23 用例，无需真机）",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "环境：MSVC 自检",
+      "type": "shell",
+      "command": "scripts\\with-msvc.cmd where cl && scripts\\with-msvc.cmd cargo --version",
+      "detail": "确认 Rust/C++ 任务能用 VS 2022 工具链（避开 VS18 预览版 D8050）",
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "测试：Rust",
+      "type": "shell",
+      "command": "scripts\\with-msvc.cmd cargo test --manifest-path src-tauri/Cargo.toml",
+      "detail": "经 MSVC 环境运行；纯前端不需要这一步",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "检查：Clippy",
+      "type": "shell",
+      "command": "scripts\\with-msvc.cmd cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings",
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "构建：Tauri debug",
+      "type": "shell",
+      "command": "scripts\\with-msvc.cmd cargo build --manifest-path src-tauri/Cargo.toml",
+      "detail": "只编 Rust 侧；产物 src-tauri/target/debug/servo-assistant.exe",
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "验证：全门禁",
+      "dependsOn": ["门禁：lint:tokens", "构建：build", "测试：前端", "测试：Rust", "检查：Clippy"],
+      "dependsOrder": "sequence",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "运行：Vite dev（后台）",
+      "type": "shell",
+      "command": "pnpm dev",
+      "detail": "调试 Chrome 前的后台任务：等 1420 就绪再启动浏览器",
+      "isBackground": true,
+      "presentation": { "reveal": "silent", "panel": "dedicated" },
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": { "regexp": "^$" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*",
+          "endsPattern": ".*(localhost|127\\.0\\.0\\.1):1420.*"
+        }
+      }
+    },
+    {
+      "label": "运行：Vite dev",
+      "type": "shell",
+      "command": "pnpm dev",
+      "detail": "网页预览 http://localhost:1420",
+      "presentation": { "reveal": "always", "panel": "dedicated", "focus": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "运行：Tauri dev",
+      "type": "shell",
+      "command": "scripts\\with-msvc.cmd pnpm tauri dev",
+      "detail": "桌面壳：自绘标题栏/拖拽区/窗口按钮真机验收（经 MSVC 环境）",
+      "isBackground": true,
+      "presentation": { "reveal": "always", "panel": "dedicated", "focus": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "预览：生产构建",
+      "type": "shell",
+      "command": "pnpm preview",
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": []
+    }
+  ]
+}

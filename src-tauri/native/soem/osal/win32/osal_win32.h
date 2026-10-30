@@ -29,6 +29,6 @@
     }                                                                         \
   } while (0)
 
-int osal_gettimeofday (struct timeval *tv, struct timezone *tz);
+/* declaration moved into osal.c: clang-cl reports a spurious conflicting type here */
 
 #endif

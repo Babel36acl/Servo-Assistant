@@ -4,11 +4,13 @@
 
 - Node.js 22+、pnpm、Rust stable（Windows 另需 MSVC + WebView2 Runtime）
 - Linux 串口：当前用户需有设备节点的读写权限（见 README 验收边界）
+- **Windows 本机跑 Rust / Tauri 必须经 `scripts\with-msvc.cmd`**：普通终端没有 MSVC/Windows SDK 的 `INCLUDE`/`LIB`/`PATH`，直接 `cargo` 会在 `native/bridge.c`（`winsock2.h`）和 `libsqlite3-sys` 上失败。该脚本会加载 VS 2022 环境并改用 `clang-cl`（本机 `cl.exe`/`c1.dll` 在 cargo 下会报 D8050）。VSCode 的 `.vscode/tasks.json` 已内置这一层。
 
 ```sh
 pnpm install
-pnpm dev        # 网页预览
-pnpm tauri dev  # 桌面壳（含自绘标题栏）
+pnpm dev        # 网页预览 http://localhost:1420
+pnpm tauri dev  # 桌面壳（含自绘标题栏）——Windows 请改用下一行的任务/命令
+scripts\with-msvc.cmd pnpm tauri dev
 ```
 
 ## 门禁（按顺序跑，全绿才能提 PR）
@@ -17,8 +19,9 @@ pnpm tauri dev  # 桌面壳（含自绘标题栏）
 pnpm lint:tokens   # 设计令牌：新增样式禁散写色值
 pnpm build         # 含 vue-tsc --noEmit
 pnpm test          # 前端 23 用例（源码直测，无需真机）
-cargo test --manifest-path src-tauri/Cargo.toml
-cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+# Windows 本机（Linux/CI 可去掉 with-msvc.cmd 前缀）：
+scripts\with-msvc.cmd cargo test --manifest-path src-tauri/Cargo.toml
+scripts\with-msvc.cmd cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 ```
 
 ## 三条铁律
@@ -29,9 +32,10 @@ cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 
 ## 目录地图
 
-- `src/shell/`：应用壳（标题栏/图标栏/侧栏/状态栏/命令面板）
+- `src/shell/`：FlClash 式壳（自绘拖拽条 `TitleBar`、图标栏 `RailNav`、窄屏底栏 `BottomNav`、`ui-mode.ts` 主题/字号/侧栏偏好）
+- `src/components/ksu/`：卡片/行/开关/分段/按钮等 UI 原语
 - `src/composables/useServo.ts`：应用状态单例（首个调用方必须是 App.vue，生命周期绑应用壳）
-- `src/views/`：六个工作区视图（懒加载）
+- `src/views/`：七个工作区视图（连接/参数/监控/诊断/通信/审计/设置）
 - `src/features/{recording,ethercat}/`：录制解析 / EtherCAT 主站
-- `src/styles/`：`tokens-a.css`（唯一色源）/ `chart-palette.ts` / `shell.css` / `bridge-a.css`
-- `scripts/`：`lint-tokens.mjs`（门禁）、`split-app.py` / `split-workbench.py`（历史拆分记录，可考据，不用再跑）
+- `src/styles/`：`tokens-a.css`（唯一色源）/ `chart-palette.ts` / `ksu.css`（壳与组件）/ `views.css` / `bridge-a.css`
+- `scripts/`：`lint-tokens.mjs`（门禁）、`with-msvc.cmd`（Windows Rust/Tauri 环境包装）、`split-app.py` / `split-workbench.py`（历史拆分记录，可考据，不用再跑）

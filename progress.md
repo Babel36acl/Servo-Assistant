@@ -30,3 +30,11 @@
 - 视图：7 页全部 FlClash 卡片仪表盘化（`.ksu-grid/.ksu-span-*/.ksu-stat/.ksu-display/.ksu-columns`），连接页双列、诊断双列、监控 6 指标卡 + 全宽曲线、表格改行卡、全局横幅改右下 toast
 - 设置页：主题模式 深/浅/跟随系统、侧栏展开、悬浮底栏、字号缩放 90/100/110%；关于信息
 - 验证：`pnpm lint:tokens` / `pnpm build`（vue-tsc 0 错）/ `pnpm test` 23/23 全绿；Edge 无头截图覆盖 1440×900 七页深色、浅色、800×1100 底栏；`cargo build` 仍卡在 native/bridge.c 的 cl.exe（本机 MSVC/依赖头问题，非本次改动），Tauri 实机点击关闭待 `pnpm tauri dev` 验
+## 2026-10-30（Windows 调试链路修复：VSCode 任务 / cargo / tauri）
+- 症状：VSCode 里 Rust/Clippy/Tauri dev 任务全跑不起来。根因三层：
+  1) 普通终端无 MSVC/Windows SDK 环境，`cl.exe` 在 `native/bridge.c` 找不到 `winsock2.h`；
+  2) 本机 VS18 预览版 Build Tools 与 VS2022 的 `cl.exe/c1.dll` 在 cargo build script 下稳定报 D8050（手动同参数可编译），大文件 `sqlite3.c` 必挂；
+  3) cargo test 的临时目录被环境 ACL 拒绝，报 os error 5。
+- 修复：新增 `scripts/with-msvc.cmd`（优先 VS2022 → VsDevCmd → `CC=CXX=clang-cl` → TMP 指向仓库 `.tmp`），VSCode 任务全部改经它；`launch.json` 补 preLaunchTask（Vite 后台任务 + 1420 ready 匹配）；`vite dev` 端口说明改 1420。
+- SOEM 兼容 clang-cl 的两处小补丁：`osal.h` 线程原型改 `void **`；`osal_win32.h` 删除 clang 误报冲突的 `osal_gettimeofday` 原型（定义仍在 osal.c，无其它调用方），已记入 `src-tauri/native/README.md`。
+- 验证：`cargo build`、`cargo test --lib`（60 passed, 1 ignored）、`cargo clippy -D warnings` 全过；`scripts\with-msvc.cmd pnpm tauri dev` 实机起窗（1440×900、无边框自绘标题栏正常），点 ✕ 后进程正常退出——窗口关闭修复实机确认。

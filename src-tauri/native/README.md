@@ -31,6 +31,12 @@ Local upstream patches (kept small and documented for future upgrades):
 - `ethercatcoe.c`: validate initial upload mailbox length, command/subindex,
   nonnegative advertised size; bound segmented uploads, validate toggle and final
   length, terminate on mailbox failure and on a two-second transfer deadline.
+- `osal/osal.h`: `osal_thread_create` / `osal_thread_create_rt` prototypes take
+  `void **thandle` (they write the handle out), matching the Windows implementation
+  and fixing a conflicting-type error under clang-cl.
+- `osal/win32/osal_win32.h`: drop the `osal_gettimeofday` prototype (definition stays
+  in `osal.c`); clang-cl reports a spurious conflicting-type between that declaration
+  and the definition. No other translation unit calls it.
 - The application pcap shim validates Ethernet/EtherCAT boundaries before passing
   frames into SOEM, after giving the recorder the original observation.
 
