@@ -75,6 +75,7 @@ pub fn run() {
             master::ethercat_connect,
             master::ethercat_disconnect,
             master::ethercat_status,
+            master::ethercat_diagnostics,
             master::ethercat_profile,
             master::ethercat_read,
             master::ethercat_write,

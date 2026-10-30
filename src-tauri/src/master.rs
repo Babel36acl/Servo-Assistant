@@ -300,6 +300,68 @@ pub async fn ethercat_status(
     .await
     .map_err(|e| e.to_string())?
 }
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SlaveDiagnostics {
+    pub position: u16,
+    pub station: u16,
+    pub state: u16,
+    pub al_code: u16,
+    pub active_ports: u8,
+    pub parent_port: u8,
+    pub entry_port: u8,
+    pub dc_active: bool,
+    pub dc_next: u16,
+    pub error_counters_valid: bool,
+    pub error_counters: Vec<u8>,
+}
+
+/// Read-only PRE-OP diagnostics: AL state, topology ports, DC state and the raw
+/// ESC error-counter register range 0x0300..0x0311. No OP transition or output.
+#[tauri::command]
+pub async fn ethercat_diagnostics(
+    slave: u16,
+    state: State<'_, Master>,
+) -> Result<SlaveDiagnostics, String> {
+    let master = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let inner = master.inner.lock().map_err(|_| "主站锁损坏")?;
+        if !inner.status.connected {
+            return Err("EtherCAT 尚未连接".into());
+        }
+        let device = inner
+            .status
+            .slaves
+            .iter()
+            .find(|item| item.position == slave)
+            .ok_or("从站不存在")?;
+        #[cfg(windows)]
+        {
+            let diag = native::diagnostics(slave)?;
+            Ok(SlaveDiagnostics {
+                position: device.position,
+                station: device.station,
+                state: device.state,
+                al_code: diag.al_code,
+                active_ports: diag.active_ports,
+                parent_port: diag.parent_port,
+                entry_port: diag.entry_port,
+                dc_active: diag.dc_active != 0,
+                dc_next: diag.dc_next,
+                error_counters_valid: diag.errors_valid != 0,
+                error_counters: diag.error_counters.to_vec(),
+            })
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = device;
+            Err("主站仅支持 Windows".into())
+        }
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 #[tauri::command]
 pub fn ethercat_profile(
     profile: MasterProfile,
@@ -512,6 +574,18 @@ pub mod native {
         mailbox_protocols: u16,
         name: [u8; 42],
     }
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    pub struct NativeSlaveDiagnostics {
+        pub active_ports: u8,
+        pub parent_port: u8,
+        pub entry_port: u8,
+        pub dc_active: u8,
+        pub errors_valid: u8,
+        pub dc_next: u16,
+        pub al_code: u16,
+        pub error_counters: [u8; 18],
+    }
     unsafe extern "C" {
         #[cfg(test)]
         pub fn sa_available() -> i32;
@@ -522,6 +596,7 @@ pub mod native {
         ) -> i32;
         pub fn sa_close();
         fn sa_slaves(out: *mut NativeSlave, capacity: i32) -> i32;
+        fn sa_slave_diagnostics(slave: u16, out: *mut NativeSlaveDiagnostics) -> i32;
         fn sa_sdo_read(slave: u16, index: u16, sub: u8, out: *mut u8, size: *mut i32) -> i32;
         fn sa_sdo_write(slave: u16, index: u16, sub: u8, data: *const u8, size: i32) -> i32;
         fn sa_error(out: *mut c_char, capacity: i32) -> i32;
@@ -571,6 +646,23 @@ pub mod native {
             })
             .collect())
     }
+    pub fn diagnostics(slave: u16) -> Result<NativeSlaveDiagnostics, String> {
+        let mut value = NativeSlaveDiagnostics {
+            active_ports: 0,
+            parent_port: 0,
+            entry_port: 0,
+            dc_active: 0,
+            errors_valid: 0,
+            dc_next: 0,
+            al_code: 0,
+            error_counters: [0; 18],
+        };
+        let result = unsafe { sa_slave_diagnostics(slave, &mut value) };
+        if result < 0 {
+            return Err("从站诊断读取失败；当前主站状态可能已过期".into());
+        }
+        Ok(value)
+    }
     pub fn read(slave: u16, index: u16, sub: u8) -> Result<Vec<u8>, String> {
         let _ = error();
         let mut b = vec![0u8; 4096];
@@ -600,6 +692,7 @@ pub mod native {
         #[test]
         fn abi_layout() {
             assert_eq!(std::mem::size_of::<NativeSlave>(), 68);
+            assert_eq!(std::mem::size_of::<NativeSlaveDiagnostics>(), 28);
         }
         #[test]
         fn missing_driver_is_reported_without_loading_failure() {

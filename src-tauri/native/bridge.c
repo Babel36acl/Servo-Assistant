@@ -123,8 +123,28 @@ int sa_slaves(sa_slave *out, int capacity) {
     }
     return ec_slavecount;
 }
-int sa_sdo_read(uint16_t slave, uint16_t index, uint8_t sub, unsigned char *out, int *size) {
-    if (!opened || slave < 1 || slave > ec_slavecount) return -1;
+/* Read-only diagnostics available in PRE-OP. Error counters are raw ESC
+ * registers 0x0300..0x0311; no semantic interpretation is invented here. */
+typedef struct {
+    uint8_t active_ports, parent_port, entry_port, dc_active, errors_valid;
+    uint16_t dc_next, al_code;
+    uint8_t error_counters[18];
+} sa_slave_diag;
+int sa_slave_diagnostics(uint16_t slave, sa_slave_diag *out) {
+    if (!opened || !out || slave < 1 || slave > ec_slavecount) return -1;
+    memset(out, 0, sizeof(*out));
+    out->active_ports = ec_slave[slave].activeports;
+    out->parent_port = ec_slave[slave].parentport;
+    out->entry_port = ec_slave[slave].entryport;
+    out->dc_active = ec_slave[slave].DCactive;
+    out->dc_next = ec_slave[slave].DCnext;
+    out->al_code = ec_slave[slave].ALstatuscode;
+    out->errors_valid = ec_FPRD(ec_slave[slave].configadr, ECT_REG_RXERR,
+                                (uint16_t)sizeof(out->error_counters),
+                                out->error_counters, EC_TIMEOUTRXM) > 0 ? 1 : 0;
+    return 0;
+}
+int sa_sdo_read(uint16_t slave, uint16_t index, uint8_t sub, unsigned char *out, int *size) {    if (!opened || slave < 1 || slave > ec_slavecount) return -1;
     return ec_SDOread(slave, index, sub, FALSE, size, out, 500000);
 }
 int sa_sdo_write(uint16_t slave, uint16_t index, uint8_t sub, const unsigned char *data, int size) {

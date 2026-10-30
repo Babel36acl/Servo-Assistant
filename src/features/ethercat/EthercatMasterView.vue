@@ -3,6 +3,7 @@ import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { CHART_COLORS } from '../../styles/chart-palette';
 import ScopeChart from '../../components/ScopeChart.vue';
+import type { SlaveDiagnostics } from '../../types';
 type Adapter = { name: string; description: string };
 type Slave = { position: number; station: number; name: string; vendor: number; product: number; revision: number; state: number; alCode: number; mailboxOut: number; mailboxIn: number };
 type Status = { connected: boolean; adapter: string; slaves: Slave[]; driverDropped: number | null };
@@ -21,11 +22,12 @@ watch(() => [status.value.connected, status.value.slaves.length], reportConnecti
 const profile = ref<Profile | null>(null), slave = ref(1), error = ref(''), notice = ref('');
 const busy = ref(false), polling = ref(false), interval = ref(1000), selection = ref<string[]>([]);
 const values = ref<Record<string, Value>>({}), drafts = ref<Record<string, string>>({}), history = ref<Record<string, number[]>>({});
+const diagnostics = ref<SlaveDiagnostics | null>(null);
 const confirmWrite = ref(''); let timer: ReturnType<typeof setTimeout> | undefined; let disposed = false;
 async function action(fn: () => Promise<void>) { if (busy.value) return; busy.value = true; error.value = ''; try { await fn(); } catch (e) { error.value = String(e); } finally { busy.value = false; } }
 async function refreshAdapters() { await action(async () => { adapters.value = await invoke<Adapter[]>('ethercat_adapters'); if (!adapters.value.some(a => a.name === adapter.value)) adapter.value = adapters.value[0]?.name ?? ''; }); }
-async function connect() { await action(async () => { status.value = await invoke<Status>('ethercat_connect', { adapter: adapter.value, confirmation: confirmation.value }); values.value = {}; history.value = {}; notice.value = '主站已连接：仅请求 PRE-OP，未发送 PDO 输出。'; }); }
-async function disconnect() { polling.value = false; await action(async () => { await invoke('ethercat_disconnect'); status.value = { connected: false, adapter: '', slaves: [], driverDropped: null }; values.value = {}; history.value = {}; }); }
+async function connect() { await action(async () => { status.value = await invoke<Status>('ethercat_connect', { adapter: adapter.value, confirmation: confirmation.value }); values.value = {}; history.value = {}; diagnostics.value = null; notice.value = '主站已连接：仅请求 PRE-OP，未发送 PDO 输出。'; }); }
+async function disconnect() { polling.value = false; await action(async () => { await invoke('ethercat_disconnect'); status.value = { connected: false, adapter: '', slaves: [], driverDropped: null }; values.value = {}; history.value = {}; diagnostics.value = null; }); }
 async function importProfile(event: Event) { const file = (event.target as HTMLInputElement).files?.[0]; if (!file) return; await action(async () => { if (file.size > 1024 * 1024) throw new Error('Profile 超过 1 MiB'); const data: unknown = JSON.parse(await file.text()); profile.value = await invoke<Profile>('ethercat_profile', { profile: data }); values.value = {}; drafts.value = {}; selection.value = profile.value.objects.slice(0, 4).map(o => o.id); history.value = {}; }); }
 async function read(id: string) { const v = await invoke<Value>('ethercat_read', { slave: slave.value, id }); values.value[id] = v; if (drafts.value[id] === undefined) drafts.value[id] = v.raw; return v; }
 async function write(o: ObjectDef) { await action(async () => {
@@ -33,8 +35,12 @@ async function write(o: ObjectDef) { await action(async () => {
   try { const v = await invoke<Value>('ethercat_write', { slave: slave.value, id: o.id, value: drafts.value[o.id], expected: before.raw, confirmation: confirmWrite.value }); values.value[o.id] = v; notice.value = `${o.name} 已写入并回读校验`; }
   catch (e) { delete values.value[o.id]; throw e; } finally { confirmWrite.value = ''; }
 }); }
-function selectSlave() { values.value = {}; drafts.value = {}; history.value = {}; }
+function selectSlave() { values.value = {}; drafts.value = {}; history.value = {}; diagnostics.value = null; }
 function stateName(state: number) { const base = ({ 1: 'INIT', 2: 'PRE-OP', 3: 'BOOT', 4: 'SAFE-OP', 8: 'OP' } as Record<number, string>)[state & 15] ?? '未知'; return `${base}${state & 16 ? ' + ERROR' : ''}`; }
+async function diagnose() { await action(async () => { diagnostics.value = await invoke<SlaveDiagnostics>('ethercat_diagnostics', { slave: slave.value }); }); }
+function portNames(mask: number) { const ports = [0, 1, 2, 3].filter(index => (mask & (1 << index)) !== 0).map(index => 'ABCD'[index]); return ports.length ? ports.join(' / ') : '无'; }
+function portLetter(value: number) { return value >= 0 && value < 4 ? 'ABCD'[value] : `P${value}`; }
+function errorBytes(values: number[] | undefined, start: number, end: number) { return (values ?? []).slice(start, end).map(value => value.toString(16).toUpperCase().padStart(2, '0')).join(' ') || '—'; }
 function useMailboxes() { emit('mapping', { mailboxes: status.value.slaves.flatMap(s => [s.mailboxOut, s.mailboxIn].filter(Boolean).map(offset => ({ station: s.station, offset }))) }); }
 const chartSeries = computed(() => selection.value.map((id, i) => ({ id, name: profile.value!.objects.find(o => o.id === id)?.name ?? id, unit: profile.value!.objects.find(o => o.id === id)?.unit ?? '', color: CHART_COLORS[i % CHART_COLORS.length], values: history.value[id] ?? [] })));
 async function tick() {
@@ -133,6 +139,80 @@ onUnmounted(() => { disposed = true; polling.value = false; clearTimeout(timer);
           </div>
           <span class="ksu-pill" :class="s.state & 16 ? 'ksu-pill--bad' : 'ksu-pill--ok'">{{ stateName(s.state) }}</span>
         </div>
+      </div>
+    </section>
+
+    <section v-if="status.connected" class="ksu-card ksu-span-full">
+      <div class="ksu-card-head">
+        <div>
+          <h2 class="ksu-card-title">从站诊断</h2>
+          <p class="ksu-card-sub">只读 PRE-OP 诊断：AL 状态、拓扑端口、DC 与 ESC 错误计数原始寄存器；不进入 OP</p>
+        </div>
+        <div class="ksu-card-actions">
+          <span class="ksu-pill ksu-pill--muted">从站 {{ slave }}</span>
+          <button class="ksu-btn ksu-btn--sm" :disabled="busy" @click="diagnose">读取诊断</button>
+        </div>
+      </div>
+      <div class="ksu-card-body">
+        <div v-if="!diagnostics" class="ksu-empty">
+          <strong>尚未读取</strong>
+          <p>选择从站后读取诊断；错误计数寄存器可能因设备或固件不支持而不可读。</p>
+        </div>
+        <template v-else>
+          <div class="ksu-grid">
+            <div class="ksu-stat">
+              <span class="ksu-stat-label">AL 状态</span>
+              <span class="ksu-stat-value ksu-display">{{ stateName(diagnostics.state) }}</span>
+              <span class="ksu-stat-sub">状态码 0x{{ diagnostics.alCode.toString(16).toUpperCase().padStart(4, '0') }}</span>
+            </div>
+            <div class="ksu-stat">
+              <span class="ksu-stat-label">活动端口</span>
+              <span class="ksu-stat-value ksu-display">{{ portNames(diagnostics.activePorts) }}</span>
+              <span class="ksu-stat-sub">位图 0x{{ diagnostics.activePorts.toString(16).toUpperCase().padStart(2, '0') }}</span>
+            </div>
+            <div class="ksu-stat">
+              <span class="ksu-stat-label">拓扑</span>
+              <span class="ksu-stat-value ksu-display">{{ portLetter(diagnostics.parentPort) }} → {{ portLetter(diagnostics.entryPort) }}</span>
+              <span class="ksu-stat-sub">上级端口 → 本从站入口端口</span>
+            </div>
+            <div class="ksu-stat">
+              <span class="ksu-stat-label">分布式时钟</span>
+              <span class="ksu-stat-value ksu-display">{{ diagnostics.dcActive ? '启用' : '未启用' }}</span>
+              <span class="ksu-stat-sub">DCnext {{ diagnostics.dcNext }}</span>
+            </div>
+          </div>
+          <div v-if="diagnostics.errorCountersValid" class="ksu-list">
+            <div class="ksu-row ksu-row--static">
+              <div class="ksu-row-body">
+                <span class="ksu-row-title mono">0x0300–0x0307</span>
+                <span class="ksu-row-sub">RX 错误计数（8 字节原始值）</span>
+              </div>
+              <span class="ksu-pill ksu-pill--muted mono">{{ errorBytes(diagnostics.errorCounters, 0, 8) }}</span>
+            </div>
+            <div class="ksu-row ksu-row--static">
+              <div class="ksu-row-body">
+                <span class="ksu-row-title mono">0x0308–0x030B</span>
+                <span class="ksu-row-sub">转发 RX 错误计数</span>
+              </div>
+              <span class="ksu-pill ksu-pill--muted mono">{{ errorBytes(diagnostics.errorCounters, 8, 12) }}</span>
+            </div>
+            <div class="ksu-row ksu-row--static">
+              <div class="ksu-row-body">
+                <span class="ksu-row-title mono">0x030C–0x030F</span>
+                <span class="ksu-row-sub">ECAT 处理单元 / PDI 错误 / 错误码</span>
+              </div>
+              <span class="ksu-pill ksu-pill--muted mono">{{ errorBytes(diagnostics.errorCounters, 12, 16) }}</span>
+            </div>
+            <div class="ksu-row ksu-row--static">
+              <div class="ksu-row-body">
+                <span class="ksu-row-title mono">0x0310–0x0311</span>
+                <span class="ksu-row-sub">丢链计数</span>
+              </div>
+              <span class="ksu-pill ksu-pill--muted mono">{{ errorBytes(diagnostics.errorCounters, 16, 18) }}</span>
+            </div>
+          </div>
+          <p v-else class="ksu-hint">ESC 错误计数寄存器读取失败（0x0300..0x0311）；AL、拓扑与 DC 信息仍有效。</p>
+        </template>
       </div>
     </section>
 

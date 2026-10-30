@@ -211,6 +211,20 @@ export interface EthercatStatus {
   driverDropped: number | null;
 }
 
+export interface SlaveDiagnostics {
+  position: number;
+  station: number;
+  state: number;
+  alCode: number;
+  activePorts: number;
+  parentPort: number;
+  entryPort: number;
+  dcActive: boolean;
+  dcNext: number;
+  errorCountersValid: boolean;
+  errorCounters: number[];
+}
+
 export interface ScanStatus {
   completed: number;
   total: number;
