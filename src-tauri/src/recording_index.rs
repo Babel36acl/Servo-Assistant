@@ -198,9 +198,9 @@ impl RecordingIndex {
                     [&name],
                     |r| {
                         Ok((
-                            r.get::<_, u64>(0)?,
+                            r.get::<_, i64>(0)? as u64,
                             r.get::<_, String>(1)?,
-                            r.get::<_, u64>(2)?,
+                            r.get::<_, i64>(2)? as u64,
                         ))
                     },
                 )
@@ -282,14 +282,14 @@ impl RecordingIndex {
                         )
                         .to_lowercase();
                         tx.execute("INSERT INTO records(file,position,length,source,protocol,direction,txn,search,stamp,seq) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                            params![name, position, line.len() as u64, r.source, r.protocol, r.direction, r.transaction.to_string(), search, r.timestamp_us, r.sequence])?;
+                            params![name, position as i64, line.len() as i64, r.source, r.protocol, r.direction, r.transaction.to_string(), search, r.timestamp_us as i64, r.sequence as i64])?;
                         crate::recording_analysis::observation(&tx, &r)?;
                         if r.protocol == "recording-context"
                             && serde_json::from_str::<serde_json::Value>(&r.detail).is_ok()
                         {
                             tx.execute(
                                 "INSERT OR REPLACE INTO contexts VALUES (?,?)",
-                                params![r.sequence, r.detail],
+                                params![r.sequence as i64, r.detail],
                             )?;
                         }
                         if r.transaction != 0
@@ -306,7 +306,7 @@ impl RecordingIndex {
                 position += line.len() as u64;
             }
             tx.execute("INSERT INTO files VALUES (?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET size=excluded.size, modified=excluded.modified, scanned=excluded.scanned, damaged=files.damaged+excluded.damaged",
-                params![name, size, modified, position, damaged])?;
+                params![name, *size as i64, modified, position as i64, damaged as i64])?;
         }
         let mut dirty = tx.prepare("SELECT source,protocol,txn FROM dirty_transactions")?;
         for entry in dirty.query_map([], |r| {
@@ -321,7 +321,7 @@ impl RecordingIndex {
             let mut records = Vec::new();
             let mut bytes = 0_u64;
             for row in stmt.query_map(params![source, protocol, txn], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as u64, r.get::<_, i64>(2)? as u64))
             })? {
                 let location: (String, u64, u64) = row?;
                 bytes += location.2;
@@ -342,13 +342,15 @@ impl RecordingIndex {
         }
         drop(dirty);
         tx.commit()?;
-        let damaged: u64 = db.query_row("SELECT COALESCE(SUM(damaged),0) FROM files", [], |r| {
-            r.get(0)
-        })?;
+        let damaged = db
+            .query_row("SELECT COALESCE(SUM(damaged),0) FROM files", [], |r| {
+                r.get::<_, i64>(0)
+            })? as u64;
         let mut warnings = recording::session_warning(&folder)
             .into_iter()
             .collect::<Vec<_>>();
-        let count: u64 = db.query_row("SELECT COUNT(*) FROM records", [], |r| r.get(0))?;
+        let count = db
+            .query_row("SELECT COUNT(*) FROM records", [], |r| r.get::<_, i64>(0))? as u64;
         if let Some(message) = recording::count_warning(&folder, count) {
             warnings.push(message);
         }
@@ -376,11 +378,12 @@ impl RecordingIndex {
             let _guard = self.lock.lock().map_err(|_| "录制索引锁损坏")?;
             let (db, folder, warning) = self.sync(path)?;
             let (condition, mut values) = filter.condition().map_err(std::io::Error::other)?;
-            let total: u64 = db.query_row(
-                &format!("SELECT COUNT(*) FROM records{condition}"),
-                rusqlite::params_from_iter(values.iter()),
-                |r| r.get(0),
-            )?;
+            let total = db
+                .query_row(
+                    &format!("SELECT COUNT(*) FROM records{condition}"),
+                    rusqlite::params_from_iter(values.iter()),
+                    |r| r.get::<_, i64>(0),
+                )? as u64;
             let offset = if tail {
                 total.saturating_sub(100)
             } else if offset >= total && total > 0 {
@@ -400,7 +403,11 @@ impl RecordingIndex {
             ))?;
             let locations = statement
                 .query_map(rusqlite::params_from_iter(values.iter()), |r| {
-                    Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, i64>(1)? as u64,
+                        r.get::<_, i64>(2)? as u64,
+                    ))
                 })?;
             let mut records = Vec::new();
             for location in locations {
@@ -434,7 +441,11 @@ impl RecordingIndex {
             let mut stmt = db.prepare("SELECT file,position,length FROM records WHERE source=? AND protocol=? AND txn=? ORDER BY id LIMIT 4097")?;
             let locations = stmt
                 .query_map(params![source, protocol, transaction.to_string()], |r| {
-                    Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, i64>(1)? as u64,
+                        r.get::<_, i64>(2)? as u64,
+                    ))
                 })?;
             let mut records = Vec::new();
             let mut bytes = 0_u64;
@@ -460,8 +471,19 @@ impl RecordingIndex {
             let (first_us, last_us, count) = db.query_row(
                 "SELECT MIN(NULLIF(stamp,0)),MAX(NULLIF(stamp,0)),COUNT(*) FROM records",
                 [],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                |r| {
+                    Ok((
+                        r.get::<_, Option<i64>>(0)?,
+                        r.get::<_, Option<i64>>(1)?,
+                        r.get::<_, i64>(2)?,
+                    ))
+                },
             )?;
+            let (first_us, last_us, count) = (
+                first_us.map(|v| v as u64),
+                last_us.map(|v| v as u64),
+                count as u64,
+            );
             let channels = db.prepare("SELECT source,protocol,slave,MIN(address),MAX(address+count-1) FROM transactions WHERE function=3 AND outcome='success' GROUP BY source,protocol,slave UNION ALL SELECT source,protocol,0,MIN(address),MAX(address) FROM observations GROUP BY source,protocol ORDER BY source,protocol,slave")?
                 .query_map([],|r| Ok(Channel { source:r.get(0)?,protocol:r.get(1)?,slave:r.get(2)?,first_address:r.get(3)?,last_address:r.get(4)? }))?.collect::<std::result::Result<Vec<_>,_>>()?;
             Ok(Overview {
@@ -484,7 +506,7 @@ impl RecordingIndex {
             let (db, _, _) = self.sync(path)?;
             let json: String = db.query_row(
                 "SELECT json FROM contexts WHERE seq<=? ORDER BY seq DESC LIMIT 1",
-                [sequence],
+                [sequence as i64],
                 |r| r.get(0),
             )?;
             Ok(serde_json::from_str(&json)?)
@@ -511,21 +533,22 @@ impl RecordingIndex {
                 let values = params![
                     filter.source,
                     address,
-                    filter.from_us.unwrap_or(0),
-                    filter.to_us.unwrap_or(i64::MAX as u64)
+                    filter.from_us.unwrap_or(0).min(i64::MAX as u64) as i64,
+                    filter.to_us.unwrap_or(i64::MAX as u64) as i64
                 ];
-                let total: u64 = db.query_row(
-                    &format!("SELECT COUNT(*) FROM observations{condition}"),
-                    values,
-                    |r| r.get(0),
-                )?;
+                let total = db
+                    .query_row(
+                        &format!("SELECT COUNT(*) FROM observations{condition}"),
+                        values,
+                        |r| r.get::<_, i64>(0),
+                    )? as u64;
                 let offset = if offset >= total {
                     total.saturating_sub(2000)
                 } else {
                     offset
                 };
                 let points = db.prepare(&format!("SELECT seq,stamp,source,protocol,raw,value,name,unit FROM observations{condition} ORDER BY stamp,seq LIMIT 2000 OFFSET {offset}"))?
-                    .query_map(values,|r| Ok(crate::recording_analysis::Point { sequence:r.get(0)?,timestamp_us:r.get(1)?,source:r.get(2)?,protocol:r.get(3)?,transaction:0,raw:r.get(4)?,value:r.get(5)?,name:r.get(6)?,unit:r.get(7)? }))?.collect::<std::result::Result<Vec<_>,_>>()?;
+                    .query_map(values,|r| Ok(crate::recording_analysis::Point { sequence:r.get::<_, i64>(0)? as u64,timestamp_us:r.get::<_, i64>(1)? as u64,source:r.get(2)?,protocol:r.get(3)?,transaction:0,raw:r.get(4)?,value:r.get(5)?,name:r.get(6)?,unit:r.get(7)? }))?.collect::<std::result::Result<Vec<_>,_>>()?;
                 return Ok(History {
                     points,
                     total,
@@ -540,14 +563,15 @@ impl RecordingIndex {
                 slave,
                 address,
                 address,
-                filter.from_us.unwrap_or(0),
-                filter.to_us.unwrap_or(i64::MAX as u64)
+                filter.from_us.unwrap_or(0).min(i64::MAX as u64) as i64,
+                filter.to_us.unwrap_or(i64::MAX as u64) as i64
             ];
-            let total: u64 = db.query_row(
-                &format!("SELECT COUNT(*) FROM transactions{condition}"),
-                values,
-                |r| r.get(0),
-            )?;
+            let total = db
+                .query_row(
+                    &format!("SELECT COUNT(*) FROM transactions{condition}"),
+                    values,
+                    |r| r.get::<_, i64>(0),
+                )? as u64;
             let offset = if offset >= total {
                 total.saturating_sub(2000)
             } else {
@@ -555,7 +579,13 @@ impl RecordingIndex {
             };
             let mut stmt = db.prepare(&format!("SELECT seq,stamp,json FROM transactions{condition} ORDER BY stamp,seq LIMIT 2000 OFFSET {offset}"))?;
             let mut points = Vec::new();
-            for row in stmt.query_map(values, |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))? {
+            for row in stmt.query_map(values, |r| {
+                Ok((
+                    r.get::<_, i64>(0)? as u64,
+                    r.get::<_, i64>(1)? as u64,
+                    r.get::<_, String>(2)?,
+                ))
+            })? {
                 let (seq, stamp, json) = row?;
                 if let Some(point) =
                     crate::recording_analysis::point(&db, seq, stamp, json, address)?

@@ -73,7 +73,7 @@ impl AuditStore {
         self.connection()?.execute(
             "INSERT INTO audit_entries(timestamp_ms, action, status, detail)
              VALUES (?1, ?2, ?3, ?4)",
-            params![entry.timestamp_ms, entry.action, entry.status, entry.detail],
+            params![entry.timestamp_ms as i64, entry.action, entry.status, entry.detail],
         )?;
         Ok(entry)
     }
@@ -87,7 +87,7 @@ impl AuditStore {
         let entries = statement
             .query_map([limit.clamp(1, 5000) as i64], |row| {
                 Ok(AuditEntry {
-                    timestamp_ms: row.get(0)?,
+                    timestamp_ms: row.get::<_, i64>(0)? as u64,
                     action: row.get(1)?,
                     status: row.get(2)?,
                     detail: row.get(3)?,
@@ -110,7 +110,7 @@ impl AuditStore {
                  timestamp_ms, device_id, profile_version, label, snapshot_json
              ) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![
-                timestamp_ms,
+                timestamp_ms as i64,
                 device_id,
                 profile_version,
                 label,
