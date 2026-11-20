@@ -28,11 +28,11 @@ pub fn observation(db: &Connection, record: &Record) -> Result<()> {
             db.execute(
                 "INSERT OR REPLACE INTO observations VALUES (?,?,?,?,?,?,?,?,?)",
                 params![
-                    record.sequence,
+                    record.sequence as i64,
                     v.address,
                     record.source,
                     record.protocol,
-                    record.timestamp_us,
+                    record.timestamp_us as i64,
                     v.raw,
                     v.value,
                     v.name,
@@ -72,8 +72,8 @@ pub fn update(db: &Connection, records: &[Record]) -> Result<()> {
             first.source,
             first.protocol,
             first.transaction.to_string(),
-            first.sequence,
-            first.timestamp_us,
+            first.sequence as i64,
+            first.timestamp_us as i64,
             slave,
             function,
             address,
@@ -122,7 +122,7 @@ pub fn point(
     };
     let context: String = db.query_row(
         "SELECT json FROM contexts WHERE seq<=? ORDER BY seq DESC LIMIT 1",
-        [sequence],
+        [sequence as i64],
         |r| r.get(0),
     )?;
     let context: serde_json::Value = serde_json::from_str(&context)?;
