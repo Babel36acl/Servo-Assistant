@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">"伺服参数调试器"</string>
+    <string name="main_activity_title">"伺服参数调试器"</string>
+</resources>
