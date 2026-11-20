@@ -186,30 +186,36 @@ impl Drop for BleTransport {
     }
 }
 
+/// 建立到 ServoBridge 的 BLE 会话所需的全部参数。集中成结构体，
+/// 避免 open_client 触发 clippy::too_many_arguments（上限 7 个）。
+pub struct BleConnectOptions {
+    pub address: String,
+    pub slave_id: u8,
+    pub protocol: Protocol,
+    pub baud: u32,
+    pub parity: ParitySetting,
+    pub stop_bits: u8,
+    pub timeout: Duration,
+    /// false 时供自动查找复用链路，连接留给下一次探测，
+    /// 结束时由调用方调 `disconnect_all` 收口。
+    pub disconnect_on_drop: bool,
+}
+
 /// 建立到 ServoBridge 的 BLE 会话并包装成 SerialClient。
 ///
 /// 已连接同地址时复用现有链路（自动查找切波特率不走断开重连）。
-/// `disconnect_on_drop=false` 供自动查找复用链路，结束时由调用方
-/// 调 `disconnect_all` 收口。
 pub fn open_client(
-    address: &str,
-    slave_id: u8,
-    protocol: Protocol,
-    baud: u32,
-    parity: ParitySetting,
-    stop_bits: u8,
-    timeout: Duration,
+    options: BleConnectOptions,
     recorder: &Recorder,
-    disconnect_on_drop: bool,
 ) -> Result<SerialClient, String> {
     let handler = blec::get_handler().map_err(|error| format!("蓝牙未初始化：{error}"))?;
     let (job_tx, job_rx) = sync_channel::<Job>(8);
     let (notif_tx, notif_rx) = sync_channel::<Vec<u8>>(256);
     let alive = Arc::new(AtomicBool::new(true));
     let (setup_tx, setup_rx) = sync_channel::<Result<(), String>>(1);
-    let addr = address.to_string();
+    let addr = options.address;
     let addr_label = addr.clone();
-    let payload = ctrl_payload(baud, parity, stop_bits);
+    let payload = ctrl_payload(options.baud, options.parity, options.stop_bits);
     let alive_cb = alive.clone();
 
     std::thread::Builder::new()
@@ -317,15 +323,20 @@ pub fn open_client(
         jobs: job_tx,
         notifications: notif_rx,
         pending: Vec::new(),
-        timeout,
+        timeout: options.timeout,
         address: addr_label,
         alive,
-        disconnect_on_drop,
+        disconnect_on_drop: options.disconnect_on_drop,
     };
-    let bits = bits_per_char(parity, stop_bits);
-    Ok(SerialClient::new(Box::new(transport), slave_id, baud, bits)
-        .with_protocol(protocol)
-        .with_recorder(recorder.clone()))
+    let bits = bits_per_char(options.parity, options.stop_bits);
+    Ok(SerialClient::new(
+        Box::new(transport),
+        options.slave_id,
+        options.baud,
+        bits,
+    )
+    .with_protocol(options.protocol)
+    .with_recorder(recorder.clone()))
 }
 
 /// 断开全部 BLE 链路（自动查找收尾调用）。

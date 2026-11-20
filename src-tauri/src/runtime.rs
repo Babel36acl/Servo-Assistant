@@ -979,15 +979,17 @@ fn open_ble_client(
         })?;
     let timeout = Duration::from_millis(request.timeout_ms.clamp(100, 10_000));
     crate::ble::open_client(
-        address,
-        request.slave_id,
-        request.protocol,
-        request.baud_rate,
-        request.parity,
-        request.stop_bits,
-        timeout,
+        crate::ble::BleConnectOptions {
+            address: address.to_string(),
+            slave_id: request.slave_id,
+            protocol: request.protocol,
+            baud: request.baud_rate,
+            parity: request.parity,
+            stop_bits: request.stop_bits,
+            timeout,
+            disconnect_on_drop,
+        },
         recorder,
-        disconnect_on_drop,
     )
     .map_err(RuntimeError::Task)
 }
