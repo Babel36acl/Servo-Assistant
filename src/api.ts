@@ -20,20 +20,21 @@ import type {
   ParameterSnapshot,
   SnapshotDiff,
   SerialPortInfo,
+  BleDeviceInfo,
   ServoProfile,
   StatusValue,
 } from "./types";
 
 export const servoApi = {
   discover(request: {
-    connection: { protocol: SerialProtocol; preset: ConnectionPreset; mode: ModbusConnectionMode; portName: string; host?: string | null; port?: number | null; slaveId: number; baudRate: number; parity: Parity; stopBits: number; timeoutMs: number; allowUnsupportedBaud?: boolean };
+    connection: { protocol: SerialProtocol; preset: ConnectionPreset; mode: ModbusConnectionMode; portName: string | null; bleDevice?: string | null; host?: string | null; port?: number | null; slaveId: number; baudRate: number; parity: Parity; stopBits: number; timeoutMs: number; allowUnsupportedBaud?: boolean };
     startSlave: number; endSlave: number;
     baudRates?: number[];
   }) { return invoke<DiscoveryStatus>("discover_device", { request }); },
   discoveryStatus() { return invoke<DiscoveryStatus>("get_discovery_status"); },
   cancelDiscovery() { return invoke<void>("cancel_discovery"); },
   scanRegisters(request: {
-    connection: { protocol: SerialProtocol; preset: ConnectionPreset; mode: ModbusConnectionMode; portName: string; host?: string | null; port?: number | null; slaveId: number; baudRate: number; parity: Parity; stopBits: number; timeoutMs: number; allowUnsupportedBaud?: boolean };
+    connection: { protocol: SerialProtocol; preset: ConnectionPreset; mode: ModbusConnectionMode; portName: string | null; bleDevice?: string | null; host?: string | null; port?: number | null; slaveId: number; baudRate: number; parity: Parity; stopBits: number; timeoutMs: number; allowUnsupportedBaud?: boolean };
     startAddress: number; endAddress: number; blockSize: number; includeZero: boolean;
   }) { return invoke<ScanStatus>("scan_registers", { request }); },
   registerScanStatus() { return invoke<ScanStatus>("register_scan_status"); },
@@ -54,11 +55,15 @@ export const servoApi = {
   listPorts() {
     return invoke<SerialPortInfo[]>("list_serial_ports");
   },
+  bleScan(nameContains: string | null, timeoutMs?: number) {
+    return invoke<BleDeviceInfo[]>("ble_scan", { nameContains, timeoutMs });
+  },
   connect(request: {
     protocol: SerialProtocol;
     preset: ConnectionPreset;
     mode: ModbusConnectionMode;
     portName: string | null;
+    bleDevice?: string | null;
     host?: string | null;
     port?: number | null;
     slaveId: number;

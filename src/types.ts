@@ -2,7 +2,7 @@ export type RawType = "u16" | "i16";
 export type Access = "ro" | "rw";
 export type RiskLevel = "low" | "medium" | "high" | "critical";
 export type Parity = "none" | "even" | "odd";
-export type ModbusConnectionMode = "simulator" | "serial" | "tcp";
+export type ModbusConnectionMode = "simulator" | "serial" | "ble" | "tcp";
 export type ConnectionMode = ModbusConnectionMode | "ethercat";
 
 export interface EnumChoice {
@@ -153,6 +153,11 @@ export interface AuditEntry {
 export interface SerialPortInfo {
   name: string;
   description: string;
+}
+
+export interface BleDeviceInfo {
+  address: string;
+  name: string | null;
 }
 
 export interface CommunicationStats {

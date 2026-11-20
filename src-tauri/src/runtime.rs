@@ -2,6 +2,7 @@ use crate::audit::{now_ms, AuditEntry, AuditStore, AuditStoreError};
 use crate::discovery::{self, DiscoveryControl, DiscoveryStatus};
 use crate::modbus::{
     CommunicationSettings, CommunicationStats, ModbusError, Protocol, SerialClient,
+    SerialTransport,
 };
 use crate::modbus_tcp::TcpClient;
 use crate::profile::{
@@ -108,6 +109,7 @@ struct Runtime {
 enum Session {
     Simulator(SimulatorDevice),
     Serial(SerialClient),
+    Ble(SerialClient),
     Tcp(TcpClient),
 }
 
@@ -116,6 +118,7 @@ impl Session {
         match self {
             Session::Simulator(device) => Ok(device.read_registers(address, count)),
             Session::Serial(client) => Ok(client.read_holding_registers(address, count)?),
+            Session::Ble(client) => Ok(client.read_holding_registers(address, count)?),
             Session::Tcp(client) => Ok(client.read_holding_registers(address, count)?),
         }
     }
@@ -127,6 +130,7 @@ impl Session {
                 Ok(())
             }
             Session::Serial(client) => Ok(client.write_single_register(address, value)?),
+            Session::Ble(client) => Ok(client.write_single_register(address, value)?),
             Session::Tcp(client) => Ok(client.write_single_register(address, value)?),
         }
     }
@@ -135,6 +139,7 @@ impl Session {
         match self {
             Session::Simulator(_) => ConnectionMode::Simulator,
             Session::Serial(_) => ConnectionMode::Serial,
+            Session::Ble(_) => ConnectionMode::Ble,
             Session::Tcp(_) => ConnectionMode::Tcp,
         }
     }
@@ -259,6 +264,7 @@ impl SimulatorDevice {
 pub enum ConnectionMode {
     Simulator,
     Serial,
+    Ble,
     Tcp,
 }
 
@@ -338,6 +344,9 @@ pub struct ConnectionRequest {
     pub preset: ConnectionPreset,
     pub mode: ConnectionMode,
     pub port_name: Option<String>,
+    /// BLE 桥设备地址；`mode` 为 `ble` 时使用。
+    #[serde(default)]
+    pub ble_device: Option<String>,
     /// Modbus TCP endpoint; only used when `mode` is `tcp`.
     #[serde(default)]
     pub host: Option<String>,
@@ -511,6 +520,7 @@ where
         let result = operation(&mut runtime);
         let events = match runtime.session.as_mut() {
             Some(Session::Serial(client)) => std::mem::take(&mut client.events),
+            Some(Session::Ble(client)) => std::mem::take(&mut client.events),
             Some(Session::Tcp(client)) => std::mem::take(&mut client.events),
             _ => Vec::new(),
         };
@@ -583,7 +593,7 @@ pub async fn discover_device(
         if runtime.session.is_some() { return Err("请先断开连接再自动查找".into()); }
         let profile = runtime.profile.as_ref().ok_or("请先导入设备 Profile")?;
         let mut connection = request.connection;
-        if !matches!(connection.mode, ConnectionMode::Serial) { return Err("自动查找仅适用于真实串口".into()); }
+        if !matches!(connection.mode, ConnectionMode::Serial | ConnectionMode::Ble) { return Err("自动查找仅适用于真实串口或蓝牙桥".into()); }
         if request.start_slave == 0 || request.start_slave > request.end_slave || request.end_slave > 247 {
             return Err("站号范围须为 1..247".into());
         }
@@ -606,21 +616,42 @@ pub async fn discover_device(
         );
         let address = profile.statuses.first().map(|item| item.address)
             .or_else(|| profile.parameters.first().map(|item| item.address)).ok_or("Profile 没有可读取的地址")?;
+        let is_ble = matches!(connection.mode, ConnectionMode::Ble);
         let mut client: Option<(u32, discovery::SerialMode, SerialClient)> = None;
         let result = discovery::scan(&worker_control, &candidates, |baud, slave, mode| {
             if client.as_ref().is_none_or(|(rate, current, _)| *rate != baud || *current != mode) {
-                // Close the previous baud-rate handle before reopening the same port.
-                client = None;
+                // BLE：拆出旧句柄在线重配（transport 已含录制包装，不重复包），不重连；
+                // 串口：关旧句柄按新参数重开。
+                let existing = match client.take() {
+                    Some((_, _, previous)) if is_ble => Some(previous.into_transport()),
+                    _ => None,
+                };
                 connection.protocol = mode.protocol;
                 connection.parity = mode.parity;
                 connection.stop_bits = mode.stop_bits;
                 connection.baud_rate = baud;
                 connection.slave_id = slave;
-                client = Some((baud, mode, open_serial_client(&connection, &runtime.recorder).map_err(|error| error.to_string())?));
+                let mut rebuilt = if is_ble {
+                    let mut transport = existing
+                        .ok_or_else(|| "蓝牙链路丢失，请重试自动查找".to_string())?;
+                    transport
+                        .reconfigure(baud, mode.parity, mode.stop_bits)
+                        .map_err(|error| error.to_string())?;
+                    let bits = crate::ble::bits_per_char(mode.parity, mode.stop_bits);
+                    SerialClient::new(transport, slave, baud, bits)
+                } else {
+                    open_serial_client(&connection, &runtime.recorder)
+                        .map_err(|error| error.to_string())?
+                };
+                rebuilt.set_protocol(mode.protocol);
+                client = Some((baud, mode, rebuilt));
             }
             client.as_mut().unwrap().2.detect_slave(slave, address).map_err(|error| error.to_string())
         });
         drop(client);
+        if is_ble {
+            crate::ble::disconnect_all();
+        }
         let detail = match &result {
             Ok(status) => format!("port={:?} checked={}/{} found={} cancelled={} slave={:?} baud={:?} mode={:?} rates={rates:?} address=0x{address:04X}", connection.port_name, status.completed, status.total, status.found, status.cancelled, status.slave_id, status.baud_rate, status.serial_mode),
             Err(error) => error.clone(),
@@ -642,6 +673,8 @@ pub struct RegisterScanRequest {
     include_zero: bool,
 }
 
+/// 寄存器扫描的临时句柄。Serial 变体同样承载 BLE 桥会话：
+/// 两者都是 SerialClient，走同一条 read_transaction 路径。
 enum ScanTransport {
     Serial(SerialClient),
     Tcp(TcpClient),
@@ -733,6 +766,23 @@ pub async fn scan_registers(
                     ScanTransport::Tcp(client),
                     format!("host={:?} port={:?}", connection.host, connection.port),
                 )
+            }
+            ConnectionMode::Ble => {
+                if !(1200..=1_000_000).contains(&connection.baud_rate) {
+                    return Err("波特率须为 1200..1000000".into());
+                }
+                if !matches!(connection.stop_bits, 1 | 2) {
+                    return Err("停止位只能为 1 或 2".into());
+                }
+                let address = connection
+                    .ble_device
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|address| !address.is_empty())
+                    .ok_or("必须选择蓝牙桥设备")?;
+                let client = open_ble_client(&connection, &recorder, true)
+                    .map_err(|error| error.to_string())?;
+                (ScanTransport::Serial(client), format!("ble={address:?}"))
             }
             ConnectionMode::Simulator => {
                 return Err("寄存器扫描仅支持真实串口或 Modbus TCP".into());
@@ -857,11 +907,14 @@ fn open_serial_client(
         + 8
         + u32::from(!matches!(request.parity, ParitySetting::None))
         + request.stop_bits as u32;
-    Ok(
-        SerialClient::new(port, request.slave_id, request.baud_rate, bits_per_char)
-            .with_protocol(request.protocol)
-            .with_recorder(recorder.clone()),
+    Ok(SerialClient::new(
+        Box::new(SerialTransport(port)),
+        request.slave_id,
+        request.baud_rate,
+        bits_per_char,
     )
+    .with_protocol(request.protocol)
+    .with_recorder(recorder.clone()))
 }
 
 fn open_tcp_client(
@@ -911,6 +964,34 @@ fn open_tcp_client(
     ))
 }
 
+fn open_ble_client(
+    request: &ConnectionRequest,
+    recorder: &crate::recording::Recorder,
+    disconnect_on_drop: bool,
+) -> Result<SerialClient, RuntimeError> {
+    let address = request
+        .ble_device
+        .as_deref()
+        .map(str::trim)
+        .filter(|address| !address.is_empty())
+        .ok_or_else(|| {
+            RuntimeError::Profile(ProfileError::Validation("必须选择蓝牙桥设备".into()))
+        })?;
+    let timeout = Duration::from_millis(request.timeout_ms.clamp(100, 10_000));
+    crate::ble::open_client(
+        address,
+        request.slave_id,
+        request.protocol,
+        request.baud_rate,
+        request.parity,
+        request.stop_bits,
+        timeout,
+        recorder,
+        disconnect_on_drop,
+    )
+    .map_err(RuntimeError::Task)
+}
+
 #[tauri::command]
 pub async fn connect_device(
     request: ConnectionRequest,
@@ -930,6 +1011,9 @@ pub async fn connect_device(
                 Session::Serial(open_serial_client(&request, &runtime.recorder)?)
             }
             ConnectionMode::Tcp => Session::Tcp(open_tcp_client(&request, &runtime.recorder)?),
+            ConnectionMode::Ble => {
+                Session::Ble(open_ble_client(&request, &runtime.recorder, true)?)
+            }
         };
         let mode = session.mode();
         runtime
@@ -943,6 +1027,9 @@ pub async fn connect_device(
             client.settings = runtime.communication.clone();
         }
         if let Some(Session::Tcp(client)) = runtime.session.as_mut() {
+            client.settings = runtime.communication.clone();
+        }
+        if let Some(Session::Ble(client)) = runtime.session.as_mut() {
             client.settings = runtime.communication.clone();
         }
         let endpoint = match mode {
@@ -961,6 +1048,15 @@ pub async fn connect_device(
         })
     })
     .await
+}
+
+#[tauri::command]
+pub async fn ble_scan(
+    name_contains: Option<String>,
+    timeout_ms: Option<u64>,
+) -> Result<Vec<crate::ble::BleDeviceInfo>, String> {
+    let timeout_ms = timeout_ms.unwrap_or(4000).clamp(1000, 30_000);
+    crate::ble::scan_devices(name_contains, timeout_ms).await
 }
 
 #[tauri::command]
@@ -1020,6 +1116,9 @@ pub async fn configure_communication(
         if let Some(Session::Tcp(client)) = runtime.session.as_mut() {
             client.settings = settings.clone();
         }
+        if let Some(Session::Ble(client)) = runtime.session.as_mut() {
+            client.settings = settings.clone();
+        }
         runtime.communication = settings;
         runtime
             .recorder
@@ -1036,6 +1135,7 @@ pub async fn get_communication_stats(
     with_runtime(state, |runtime| {
         Ok(match runtime.session.as_ref() {
             Some(Session::Serial(client)) => client.stats.clone(),
+            Some(Session::Ble(client)) => client.stats.clone(),
             Some(Session::Tcp(client)) => client.stats.clone(),
             _ => CommunicationStats::default(),
         })
@@ -1083,6 +1183,13 @@ pub async fn probe_read(
                 (result, 1 + client.stats.retries - retries)
             }
             Session::Tcp(client) => {
+                let retries = client.stats.retries;
+                let result = client
+                    .read_transaction(address, count)
+                    .map_err(|e| e.to_string());
+                (result, 1 + client.stats.retries - retries)
+            }
+            Session::Ble(client) => {
                 let retries = client.stats.retries;
                 let result = client
                     .read_transaction(address, count)

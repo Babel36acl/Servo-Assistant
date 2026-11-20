@@ -28,6 +28,10 @@ thiserror = "2"
 rusqlite = { version = "0.37", features = ["bundled"] }
 tauri-plugin-dialog = "2"
 tempfile = "3"
+tauri-plugin-blec = "0.20.0"
+blec = "0.20.0"
+uuid = "1.29.3"
+tokio = { version = "1.54.1", features = ["rt", "sync", "time"] }
 
 [patch.crates-io]
 # GTK3 requires 0.18; backport upstream PR #1343 until a compatible fix is published.

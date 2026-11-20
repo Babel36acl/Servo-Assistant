@@ -3,8 +3,8 @@ import { computed } from "vue";
 import { useServo } from "../composables/useServo";
 import RegisterScanner from "../features/modbus/RegisterScanner.vue";
 import EthercatConnectCard from "../features/ethercat/EthercatConnectCard.vue";
-const { activePage, allowUnsupportedBaud, baudRate, baudRates, busy, cancelDiscovery, connect, connected, connectionBlockedReason, connectionMode, disconnect, discoverConnection, discovery, discoveryActive, discoveryBaudRates, discoveryEnd, discoveryMessage, discoveryStart, discoveryTimeout, ethercatConnected, handleProfileFile, host, parity, port, portName, ports, profile, protocol, refreshPorts, selectAllDiscoveryBaudRates, serialModeLabel, slaveId, stationMax, stopBits, summary, timeoutMs, toggleDiscoveryBaud } = useServo();
-const modeLabels = { simulator: "配置模拟器", serial: "真实串口", tcp: "Modbus TCP", ethercat: "EtherCAT" } as const;
+const { activePage, allowUnsupportedBaud, baudRate, baudRates, busy, cancelDiscovery, connect, connected, connectionBlockedReason, connectionMode, bleDevices, bleDeviceAddress, bleScanning, refreshBleDevices, disconnect, discoverConnection, discovery, discoveryActive, discoveryBaudRates, discoveryEnd, discoveryMessage, discoveryStart, discoveryTimeout, ethercatConnected, handleProfileFile, host, parity, port, portName, ports, profile, protocol, refreshPorts, selectAllDiscoveryBaudRates, serialModeLabel, slaveId, stationMax, stopBits, summary, timeoutMs, toggleDiscoveryBaud } = useServo();
+const modeLabels = { simulator: "配置模拟器", serial: "真实串口", ble: "蓝牙桥接", tcp: "Modbus TCP", ethercat: "EtherCAT" } as const;
 const modeLabel = computed(() => modeLabels[connectionMode.value]);
 const modbusMode = computed(() => connectionMode.value !== "ethercat");
 </script>
@@ -48,6 +48,7 @@ const modbusMode = computed(() => connectionMode.value !== "ethercat");
             <div class="ksu-row-actions">
               <span class="ksu-pill" :class="connectionMode === 'simulator' ? 'ksu-pill--muted' : 'ksu-pill--ok'">{{ modeLabel }}</span>
               <span v-if="connectionMode === 'serial'" class="ksu-pill">{{ portName || '未选择串口' }}</span>
+              <span v-else-if="connectionMode === 'ble'" class="ksu-pill">{{ bleDevices.find((item) => item.address === bleDeviceAddress)?.name || bleDeviceAddress || '未选择蓝牙桥' }}</span>
               <span v-else-if="connectionMode === 'tcp'" class="ksu-pill">{{ host }}:{{ port }}</span>
               <span v-else-if="connectionMode === 'ethercat'" class="ksu-pill">{{ ethercatConnected ? '已接管网卡' : '未接管网卡' }}</span>
               <template v-if="modbusMode">
@@ -110,7 +111,7 @@ const modbusMode = computed(() => connectionMode.value !== "ethercat");
         </section>
 
         <!-- 自动查找卡 -->
-        <section v-if="connectionMode === 'serial'" class="ksu-card">
+        <section v-if="connectionMode === 'serial' || connectionMode === 'ble'" class="ksu-card">
           <div class="ksu-card-head">
             <div>
               <h2 class="ksu-card-title">自动查找通讯配置</h2>
@@ -193,7 +194,7 @@ const modbusMode = computed(() => connectionMode.value !== "ethercat");
               <div class="ksu-card-head">
                 <div>
                   <h2 class="ksu-card-title">连接参数</h2>
-                  <p class="ksu-card-sub">{{ connectionMode === 'ethercat' ? '选择专用网卡并接管 EtherCAT 总线' : connectionMode === 'tcp' ? '填写 Modbus TCP 主机与端口' : connectionMode === 'serial' ? '串口参数需与从站一致' : '使用 Profile 默认通讯参数' }}</p>
+                  <p class="ksu-card-sub">{{ connectionMode === 'ethercat' ? '选择专用网卡并接管 EtherCAT 总线' : connectionMode === 'tcp' ? '填写 Modbus TCP 主机与端口' : connectionMode === 'serial' ? '串口参数需与从站一致' : connectionMode === 'ble' ? 'BLE 桥接 485，串口参数随连接下发到桥' : '使用 Profile 默认通讯参数' }}</p>
                 </div>
               </div>
               <div class="ksu-card-body">
@@ -208,6 +209,10 @@ const modbusMode = computed(() => connectionMode.value !== "ethercat");
                       type="button" class="ksu-segmented-item" :class="{ active: connectionMode === 'serial' }"
                       :disabled="connected || busy || ethercatConnected" title="Modbus 串口" @click="connectionMode = 'serial'"
                     >串口</button>
+                    <button
+                      type="button" class="ksu-segmented-item" :class="{ active: connectionMode === 'ble' }"
+                      :disabled="connected || busy || ethercatConnected" title="BLE 桥接 485" @click="connectionMode = 'ble'"
+                    >蓝牙</button>
                     <button
                       type="button" class="ksu-segmented-item" :class="{ active: connectionMode === 'tcp' }"
                       :disabled="connected || busy || ethercatConnected" title="Modbus TCP" @click="connectionMode = 'tcp'"
@@ -231,6 +236,16 @@ const modbusMode = computed(() => connectionMode.value !== "ethercat");
                       <button class="ksu-btn ksu-btn--sm" :disabled="connected || busy" title="刷新串口" aria-label="刷新串口" @click="refreshPorts">刷新</button>
                     </div>
                   </div>
+                  <div v-else-if="connectionMode === 'ble'" class="ksu-field">
+                    <span class="ksu-field-label">蓝牙桥设备</span>
+                    <div class="inline-field">
+                      <select class="ksu-select" v-model="bleDeviceAddress" :disabled="connected || busy">
+                        <option value="" disabled>请扫描并选择 ServoBridge</option>
+                        <option v-for="item in bleDevices" :key="item.address" :value="item.address">{{ item.name || item.address }}</option>
+                      </select>
+                      <button class="ksu-btn ksu-btn--sm" :disabled="bleScanning || connected || busy" title="扫描蓝牙桥" aria-label="扫描蓝牙桥" @click="refreshBleDevices">{{ bleScanning ? '扫描中…' : '扫描' }}</button>
+                    </div>
+                  </div>
                   <div v-else-if="connectionMode === 'tcp'" class="ksu-form-grid">
                     <label class="ksu-field">
                       <span class="ksu-field-label">主机</span>
@@ -247,7 +262,7 @@ const modbusMode = computed(() => connectionMode.value !== "ethercat");
                       <span class="ksu-field-label">站号</span>
                       <input class="ksu-input" v-model.number="slaveId" type="number" min="1" :max="stationMax" :disabled="connected || busy" />
                     </label>
-                    <template v-if="connectionMode === 'serial'">
+                    <template v-if="connectionMode === 'serial' || connectionMode === 'ble'">
                       <label class="ksu-field">
                         <span class="ksu-field-label">波特率</span>
                         <select class="ksu-select" v-model.number="baudRate" :disabled="connected || busy">
@@ -283,7 +298,7 @@ const modbusMode = computed(() => connectionMode.value !== "ethercat");
                     </label>
                   </div>
 
-                  <div v-if="connectionMode === 'serial'" class="ksu-list">
+                  <div v-if="connectionMode === 'serial' || connectionMode === 'ble'" class="ksu-list">
                     <div class="ksu-row ksu-row--static">
                       <div class="ksu-row-body">
                         <span class="ksu-row-title">扩展波特率</span>

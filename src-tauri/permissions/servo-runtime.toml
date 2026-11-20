@@ -43,6 +43,7 @@ commands.allow = [
   "import_profile",
   "get_active_profile",
   "list_serial_ports",
+  "ble_scan",
   "connect_device",
   "disconnect_device",
   "get_connection_status",

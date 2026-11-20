@@ -4,7 +4,7 @@ import { servoApi } from "../../api";
 import type { ScanStatus } from "../../types";
 import { useServo } from "../../composables/useServo";
 
-const { allowUnsupportedBaud, baudRate, busy, connected, connectionMode, hex, host, parity, port, portName, protocol, showError, slaveId, stopBits, timeoutMs } = useServo();
+const { allowUnsupportedBaud, baudRate, busy, connected, connectionMode, bleDeviceAddress, hex, host, parity, port, portName, protocol, showError, slaveId, stopBits, timeoutMs } = useServo();
 const startAddress = ref(0);
 const endAddress = ref(255);
 const blockSize = ref(16);
@@ -38,11 +38,12 @@ async function start() {
     error.value = "地址须为 0..65535 且起始不大于结束，单次最多 4096 个地址，每块 1..100 个寄存器";
     return;
   }
-  if (connectionMode.value !== "serial" && connectionMode.value !== "tcp") {
-    error.value = "寄存器扫描仅支持串口或 Modbus TCP";
+  if (connectionMode.value !== "serial" && connectionMode.value !== "ble" && connectionMode.value !== "tcp") {
+    error.value = "寄存器扫描仅支持串口、蓝牙桥或 Modbus TCP";
     return;
   }
   if (connectionMode.value === "serial" && !portName.value) { error.value = "请先在连接参数中选择串口"; return; }
+  if (connectionMode.value === "ble" && !bleDeviceAddress.value) { error.value = "请先在连接参数中扫描并选择蓝牙桥设备"; return; }
   if (connectionMode.value === "tcp" && !endpointReady.value) { error.value = "请先在连接参数中填写 Modbus TCP 主机与端口"; return; }
   error.value = "";
   status.value = null;
@@ -56,6 +57,7 @@ async function start() {
         preset: "profile",
         mode: connectionMode.value,
         portName: connectionMode.value === "serial" ? portName.value : "",
+        bleDevice: connectionMode.value === "ble" ? bleDeviceAddress.value : null,
         host: connectionMode.value === "tcp" ? host.value.trim() : null,
         port: connectionMode.value === "tcp" ? port.value : null,
         slaveId: slaveId.value,

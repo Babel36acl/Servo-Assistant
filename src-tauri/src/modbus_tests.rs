@@ -1,7 +1,6 @@
 use super::*;
-use serialport::{DataBits, FlowControl, Parity, StopBits};
 use std::collections::VecDeque;
-use std::io::{self, Read};
+use std::io;
 use std::sync::{Arc, Mutex};
 
 // Script response bytes per request; exercise the actual RTU parser and retry loop.
@@ -10,7 +9,7 @@ struct ScriptPort {
     current: VecDeque<u8>,
     writes: Arc<Mutex<Vec<Vec<u8>>>>,
 }
-impl Read for ScriptPort {
+impl Transport for ScriptPort {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
         if self.current.is_empty() {
             return Err(io::ErrorKind::TimedOut.into());
@@ -19,92 +18,25 @@ impl Read for ScriptPort {
         buffer[0] = self.current.pop_front().unwrap();
         Ok(1)
     }
-}
-impl Write for ScriptPort {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+    fn write_all(&mut self, bytes: &[u8]) -> io::Result<()> {
         self.writes.lock().unwrap().push(bytes.to_vec());
         self.current = self.responses.pop_front().unwrap_or_default().into();
-        Ok(bytes.len())
+        Ok(())
     }
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
-}
-impl SerialPort for ScriptPort {
-    fn name(&self) -> Option<String> {
-        None
+    fn clear_input(&mut self) -> io::Result<()> {
+        Ok(())
     }
-    fn baud_rate(&self) -> serialport::Result<u32> {
-        Ok(19200)
-    }
-    fn data_bits(&self) -> serialport::Result<DataBits> {
-        Ok(DataBits::Eight)
-    }
-    fn flow_control(&self) -> serialport::Result<FlowControl> {
-        Ok(FlowControl::None)
-    }
-    fn parity(&self) -> serialport::Result<Parity> {
-        Ok(Parity::Even)
-    }
-    fn stop_bits(&self) -> serialport::Result<StopBits> {
-        Ok(StopBits::One)
+    fn set_timeout(&mut self, _: Duration) -> io::Result<()> {
+        Ok(())
     }
     fn timeout(&self) -> Duration {
         Duration::from_millis(800)
     }
-    fn set_baud_rate(&mut self, _: u32) -> serialport::Result<()> {
-        Ok(())
-    }
-    fn set_data_bits(&mut self, _: DataBits) -> serialport::Result<()> {
-        Ok(())
-    }
-    fn set_flow_control(&mut self, _: FlowControl) -> serialport::Result<()> {
-        Ok(())
-    }
-    fn set_parity(&mut self, _: Parity) -> serialport::Result<()> {
-        Ok(())
-    }
-    fn set_stop_bits(&mut self, _: StopBits) -> serialport::Result<()> {
-        Ok(())
-    }
-    fn set_timeout(&mut self, _: Duration) -> serialport::Result<()> {
-        Ok(())
-    }
-    fn write_request_to_send(&mut self, _: bool) -> serialport::Result<()> {
-        Ok(())
-    }
-    fn write_data_terminal_ready(&mut self, _: bool) -> serialport::Result<()> {
-        Ok(())
-    }
-    fn read_clear_to_send(&mut self) -> serialport::Result<bool> {
-        Ok(true)
-    }
-    fn read_data_set_ready(&mut self) -> serialport::Result<bool> {
-        Ok(true)
-    }
-    fn read_ring_indicator(&mut self) -> serialport::Result<bool> {
-        Ok(false)
-    }
-    fn read_carrier_detect(&mut self) -> serialport::Result<bool> {
-        Ok(true)
-    }
-    fn bytes_to_read(&self) -> serialport::Result<u32> {
-        Ok(self.current.len() as u32)
-    }
-    fn bytes_to_write(&self) -> serialport::Result<u32> {
-        Ok(0)
-    }
-    fn clear(&self, _: ClearBuffer) -> serialport::Result<()> {
-        Ok(())
-    }
-    fn try_clone(&self) -> serialport::Result<Box<dyn SerialPort>> {
-        unimplemented!()
-    }
-    fn set_break(&self) -> serialport::Result<()> {
-        Ok(())
-    }
-    fn clear_break(&self) -> serialport::Result<()> {
-        Ok(())
+    fn name(&self) -> String {
+        "script".into()
     }
 }
 fn frame(mut bytes: Vec<u8>) -> Vec<u8> {

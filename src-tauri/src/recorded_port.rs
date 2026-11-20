@@ -1,16 +1,16 @@
+use crate::modbus::Transport;
+use crate::profile::ParitySetting;
 use crate::recording::Recorder;
-use serialport::*;
-use std::{
-    io::{self, Read, Write},
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
-    time::Duration,
+use std::io;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
 };
+use std::time::Duration;
 
+/// 包装任意 Transport，把每个方向、每个事件的字节流写进录制器。
 pub struct RecordedPort {
-    pub port: Box<dyn SerialPort>,
+    pub port: Box<dyn Transport>,
     pub recorder: Recorder,
     pub transaction: Arc<AtomicU64>,
     pub source: String,
@@ -28,7 +28,7 @@ impl RecordedPort {
         );
     }
 }
-impl Read for RecordedPort {
+impl Transport for RecordedPort {
     fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
         match self.port.read(bytes) {
             Ok(n) => {
@@ -45,97 +45,49 @@ impl Read for RecordedPort {
             }
         }
     }
-}
-impl Write for RecordedPort {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        match self.port.write(bytes) {
-            Ok(n) => {
-                self.log(
-                    "tx",
-                    &bytes[..n],
-                    "accepted by OS; physical transmission unverified",
-                );
-                Ok(n)
-            }
-            Err(e) => {
-                self.log("event", &[], &format!("write: {e}"));
-                Err(e)
-            }
+    fn write_all(&mut self, bytes: &[u8]) -> io::Result<()> {
+        let result = self.port.write_all(bytes);
+        match &result {
+            Ok(()) => self.log(
+                "tx",
+                bytes,
+                "accepted by OS; physical transmission unverified",
+            ),
+            Err(e) => self.log("event", &[], &format!("write: {e}")),
         }
+        result
     }
     fn flush(&mut self) -> io::Result<()> {
         let result = self.port.flush();
         self.log("event", &[], &format!("flush: {result:?}"));
         result
     }
-}
-macro_rules! delegate {
-    ($name:ident, $result:ty) => {
-        fn $name(&self) -> $result {
-            self.port.$name()
-        }
-    };
-    ($name:ident, $arg:ident: $ty:ty, $result:ty) => {
-        fn $name(&mut self, $arg: $ty) -> $result {
-            self.port.$name($arg)
-        }
-    };
-}
-impl SerialPort for RecordedPort {
-    delegate!(name, Option<String>);
-    delegate!(baud_rate, serialport::Result<u32>);
-    delegate!(data_bits, serialport::Result<DataBits>);
-    delegate!(flow_control, serialport::Result<FlowControl>);
-    delegate!(parity, serialport::Result<Parity>);
-    delegate!(stop_bits, serialport::Result<StopBits>);
-    delegate!(timeout, Duration);
-    delegate!(set_baud_rate, value: u32, serialport::Result<()>);
-    delegate!(set_data_bits, value: DataBits, serialport::Result<()>);
-    delegate!(set_flow_control, value: FlowControl, serialport::Result<()>);
-    delegate!(set_parity, value: Parity, serialport::Result<()>);
-    delegate!(set_stop_bits, value: StopBits, serialport::Result<()>);
-    delegate!(set_timeout, value: Duration, serialport::Result<()>);
-    delegate!(write_request_to_send, value: bool, serialport::Result<()>);
-    delegate!(write_data_terminal_ready, value: bool, serialport::Result<()>);
-    fn read_clear_to_send(&mut self) -> serialport::Result<bool> {
-        self.port.read_clear_to_send()
-    }
-    fn read_data_set_ready(&mut self) -> serialport::Result<bool> {
-        self.port.read_data_set_ready()
-    }
-    fn read_ring_indicator(&mut self) -> serialport::Result<bool> {
-        self.port.read_ring_indicator()
-    }
-    fn read_carrier_detect(&mut self) -> serialport::Result<bool> {
-        self.port.read_carrier_detect()
-    }
-    delegate!(bytes_to_read, serialport::Result<u32>);
-    delegate!(bytes_to_write, serialport::Result<u32>);
-    fn clear(&self, buffer: ClearBuffer) -> serialport::Result<()> {
-        let pending = self.port.bytes_to_read();
-        let result = self.port.clear(buffer);
+    fn clear_input(&mut self) -> io::Result<()> {
+        let result = self.port.clear_input();
         self.log(
             "event",
             &[],
-            &format!(
-                "clear {buffer:?}: {result:?}; pending={pending:?}; discarded bytes unavailable"
-            ),
+            &format!("clear input: {result:?}; discarded bytes unavailable"),
         );
         result
     }
-    fn try_clone(&self) -> serialport::Result<Box<dyn SerialPort>> {
-        Ok(Box::new(Self {
-            port: self.port.try_clone()?,
-            recorder: self.recorder.clone(),
-            transaction: self.transaction.clone(),
-            source: self.source.clone(),
-            protocol: self.protocol,
-        }))
+    fn set_timeout(&mut self, timeout: Duration) -> io::Result<()> {
+        let result = self.port.set_timeout(timeout);
+        self.log("event", &[], &format!("set_timeout: {result:?}"));
+        result
     }
-    fn set_break(&self) -> serialport::Result<()> {
-        self.port.set_break()
+    fn timeout(&self) -> Duration {
+        self.port.timeout()
     }
-    fn clear_break(&self) -> serialport::Result<()> {
-        self.port.clear_break()
+    fn name(&self) -> String {
+        self.port.name()
+    }
+    fn reconfigure(
+        &mut self,
+        baud: u32,
+        parity: ParitySetting,
+        stop_bits: u8,
+    ) -> Result<(), String> {
+        self.port.reconfigure(baud, parity, stop_bits)
     }
 }

@@ -1,9 +1,70 @@
 use crate::audit::now_ms;
+use crate::profile::ParitySetting;
 use serde::{Deserialize, Serialize};
-use serialport::{ClearBuffer, SerialPort};
-use std::io::Write;
+use std::io;
 use std::time::{Duration, Instant};
 use thiserror::Error;
+
+/// Modbus 字节流的传输层抽象。真实串口与 BLE 桥（ble.rs）各自实现；
+/// SerialClient 的重试 / CRC / 录制逻辑只认这一层。
+pub trait Transport: Send {
+    /// 读至多 buf.len() 字节；超时返回 TimedOut 错误（与 serialport 语义一致）。
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize>;
+    /// 发送整帧，不允许半帧返回。
+    fn write_all(&mut self, buf: &[u8]) -> io::Result<()>;
+    fn flush(&mut self) -> io::Result<()>;
+    /// 清空接收缓冲（含已到未读字节）。
+    fn clear_input(&mut self) -> io::Result<()>;
+    fn set_timeout(&mut self, timeout: Duration) -> io::Result<()>;
+    fn timeout(&self) -> Duration;
+    /// 录制 source 的可读标签。
+    fn name(&self) -> String;
+    /// 在线变更通讯参数（仅 BLE 桥实现；串口靠重开句柄，不需要这条路）。
+    fn reconfigure(
+        &mut self,
+        _baud: u32,
+        _parity: ParitySetting,
+        _stop_bits: u8,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+/// serialport 后端的薄包装：只实现 Transport 的入口，不拖整个
+/// serialport::SerialPort 接口面进来。
+pub struct SerialTransport(pub Box<dyn serialport::SerialPort>);
+
+fn serial_error_to_io(error: serialport::Error) -> io::Error {
+    // serialport 的超时以 io::ErrorKind::TimedOut 直接从 read 冒出，
+    // serialport::Error 本身只覆盖打开/配置阶段，统一按链路异常处理。
+    io::Error::new(io::ErrorKind::ConnectionAborted, error.to_string())
+}
+
+impl Transport for SerialTransport {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        std::io::Read::read(&mut self.0, buf)
+    }
+    fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
+        std::io::Write::write_all(&mut self.0, buf)
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        std::io::Write::flush(&mut self.0)
+    }
+    fn clear_input(&mut self) -> io::Result<()> {
+        self.0
+            .clear(serialport::ClearBuffer::Input)
+            .map_err(serial_error_to_io)
+    }
+    fn set_timeout(&mut self, timeout: Duration) -> io::Result<()> {
+        self.0.set_timeout(timeout).map_err(serial_error_to_io)
+    }
+    fn timeout(&self) -> Duration {
+        self.0.timeout()
+    }
+    fn name(&self) -> String {
+        self.0.name().unwrap_or_default()
+    }
+}
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -69,7 +130,7 @@ fn retryable(error: &ModbusError) -> bool {
 }
 
 fn read_captured(
-    port: &mut dyn SerialPort,
+    port: &mut dyn Transport,
     buffer: &mut [u8],
     received: &mut Vec<u8>,
 ) -> Result<(), ModbusError> {
@@ -111,7 +172,8 @@ pub enum ModbusError {
 }
 
 pub struct SerialClient {
-    port: Box<dyn SerialPort>,
+    port: Box<dyn Transport>,
+    baud_rate: u32,
     slave_id: u8,
     protocol: Protocol,
     inter_frame_delay: Duration,
@@ -151,7 +213,7 @@ impl SerialClient {
         Ok(true)
     }
     pub fn new(
-        port: Box<dyn SerialPort>,
+        port: Box<dyn Transport>,
         slave_id: u8,
         baud_rate: u32,
         bits_per_char: u32,
@@ -159,6 +221,7 @@ impl SerialClient {
         let micros = ((4_f64 * bits_per_char as f64 * 1_000_000_f64) / baud_rate as f64).ceil();
         Self {
             port,
+            baud_rate,
             slave_id,
             protocol: Protocol::Rtu,
             inter_frame_delay: Duration::from_micros(micros.max(1.0) as u64),
@@ -179,10 +242,9 @@ impl SerialClient {
 
     pub fn with_recorder(mut self, recorder: crate::recording::Recorder) -> Self {
         let source = format!(
-            "serial:{} baud={:?} parity={:?} connection={}",
-            self.port.name().unwrap_or_default(),
-            self.port.baud_rate(),
-            self.port.parity(),
+            "{} baud={} connection={}",
+            self.port.name(),
+            self.baud_rate,
             crate::recording::timestamp_us()
         );
         self.capture = Some((recorder.clone(), source.clone()));
@@ -295,7 +357,7 @@ impl SerialClient {
         };
         let timeout = self.port.timeout();
         let result = (|| {
-            self.port.clear(ClearBuffer::Input)?;
+            self.port.clear_input()?;
             self.port.write_all(&request)?;
             self.port.flush()?;
             let response = match self.protocol {
@@ -397,8 +459,9 @@ impl SerialClient {
             }
             Ok(response)
         })();
-        let restored = self.port.set_timeout(timeout).map_err(ModbusError::from);
-        let result = result.and_then(|response| restored.map(|()| response));
+        let restored = self.port.set_timeout(timeout);
+        let result =
+            result.and_then(|response| restored.map(|()| response).map_err(ModbusError::from));
         if let Some((recorder, source)) = &self.capture {
             recorder.emit(
                 source,
@@ -418,6 +481,16 @@ impl SerialClient {
         }
         self.last_frame_end = Some(Instant::now());
         result
+    }
+
+    /// 拆出底层传输句柄：自动查找切换波特率时复用 BLE 链路，不重连。
+    pub fn into_transport(self) -> Box<dyn Transport> {
+        self.port
+    }
+
+    /// 在线切换协议（自动查找在 RTU/ASCII 之间轮扫）。
+    pub fn set_protocol(&mut self, protocol: Protocol) {
+        self.protocol = protocol;
     }
 
     fn wait_for_inter_frame_gap(&self) {

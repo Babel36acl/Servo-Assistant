@@ -20,6 +20,7 @@ import type {
   Parity,
   ProfileSummary,
   SerialPortInfo,
+  BleDeviceInfo,
   ServoProfile,
   SnapshotDiff,
   StatusValue,
@@ -52,6 +53,23 @@ const connected = ref(false);
 const connectionMode = ref<ConnectionMode>("simulator");
 const ports = ref<SerialPortInfo[]>([]);
 const portName = ref("");
+const bleDevices = ref<BleDeviceInfo[]>([]);
+const bleDeviceAddress = ref("");
+const bleScanning = ref(false);
+async function refreshBleDevices() {
+  if (bleScanning.value) return;
+  bleScanning.value = true;
+  try {
+    bleDevices.value = await servoApi.bleScan("ServoBridge", 5000);
+    if (bleDevices.value.length && !bleDevices.value.some((item) => item.address === bleDeviceAddress.value)) {
+      bleDeviceAddress.value = bleDevices.value[0].address;
+    }
+  } catch (error) {
+    showError(error);
+  } finally {
+    bleScanning.value = false;
+  }
+}
 const host = ref("127.0.0.1");
 const port = ref(502);
 const ethercatConnected = ref(false);
@@ -88,6 +106,7 @@ const connectionBlockedReason = computed(() => {
   if (connectionMode.value === "ethercat") return "";
   if (!profile.value) return "请先导入设备 Profile（JSON），连接和查找需要其中的寄存器地址。";
   if (connectionMode.value === "serial" && !portName.value) return "请选择串口，再连接或自动查找。";
+  if (connectionMode.value === "ble" && !bleDeviceAddress.value) return "请扫描并选择 ServoBridge 蓝牙桥设备。";
   if (connectionMode.value === "tcp" && (!host.value.trim() || !Number.isInteger(port.value) || port.value < 1 || port.value > 65535)) {
     return "请填写 Modbus TCP 主机与端口（1..65535）。";
   }
@@ -153,7 +172,8 @@ async function pollDiscovery() {
 }
 
 async function discoverConnection() {
-  if (busy.value || connected.value || !profile.value || !portName.value) return;
+  if (busy.value || connected.value || !profile.value) return;
+  if (connectionMode.value === "ble" ? !bleDeviceAddress.value : !portName.value) return;
   if (![discoveryStart.value, discoveryEnd.value, discoveryTimeout.value].every(Number.isInteger) || discoveryStart.value < 1 || discoveryEnd.value > stationMax || discoveryStart.value > discoveryEnd.value || discoveryTimeout.value < 100 || discoveryTimeout.value > 2000) {
     showError(`站号范围须为 1..${stationMax}，探测超时须为 100..2000 ms`); return;
   }
@@ -170,7 +190,7 @@ async function discoverConnection() {
     showError("请至少选择一个搜索波特率");
     return;
   }
-  const resultPromise = servoApi.discover({ connection: { protocol: protocol.value, preset: "profile", mode: 'serial', portName: portName.value, slaveId: slaveId.value, baudRate: baudRate.value, allowUnsupportedBaud: allowUnsupportedBaud.value, parity: parity.value, stopBits: stopBits.value, timeoutMs: discoveryTimeout.value }, startSlave: discoveryStart.value, endSlave: discoveryEnd.value, baudRates: baudSelection });
+  const resultPromise = servoApi.discover({ connection: { protocol: protocol.value, preset: "profile", mode: connectionMode.value === 'ble' ? 'ble' : 'serial', portName: connectionMode.value === 'serial' ? portName.value : null, bleDevice: connectionMode.value === 'ble' ? bleDeviceAddress.value : null, slaveId: slaveId.value, baudRate: baudRate.value, allowUnsupportedBaud: allowUnsupportedBaud.value, parity: parity.value, stopBits: stopBits.value, timeoutMs: discoveryTimeout.value }, startSlave: discoveryStart.value, endSlave: discoveryEnd.value, baudRates: baudSelection });
   discoveryTimer = window.setTimeout(pollDiscovery, 250);
   try {
     const result = await resultPromise;
@@ -399,6 +419,7 @@ async function connect() {
     await servoApi.connect({
       mode,
       portName: mode === "serial" ? portName.value || null : null,
+      bleDevice: mode === "ble" ? bleDeviceAddress.value : null,
       host: mode === "tcp" ? host.value.trim() : null,
       port: mode === "tcp" ? port.value : null,
       slaveId: slaveId.value,
@@ -413,7 +434,7 @@ async function connect() {
     connected.value = true;
     communicationStats.value = null;
     statusUpdatedAt.value = null;
-    notice.value = mode === "simulator" ? "配置模拟器已连接" : mode === "tcp" ? `${host.value}:${port.value} 已连接` : `${portName.value} 已连接`;
+    notice.value = mode === "simulator" ? "配置模拟器已连接" : mode === "tcp" ? `${host.value}:${port.value} 已连接` : mode === "ble" ? `蓝牙桥 ${bleDeviceAddress.value} 已连接` : `${portName.value} 已连接`;
     staleIds.value = new Set(profile.value?.parameters.map(item => item.parameterId));
     await readParameterGroups(false);
     scheduleStatusPoll(0);
@@ -724,5 +745,5 @@ function formatTimestamp(timestampMs: number) {
 onMounted(refreshAudit);
 onUnmounted(() => { disposed = true; cancelRequested.value = true; window.clearTimeout(statusTimer); window.clearTimeout(discoveryTimer); if (discoveryActive.value) void servoApi.cancelDiscovery(); });
 
-  return { backgroundActivity, activePage, currentPage, communicationTab, profile, summary, connected, connectionMode, ports, portName, host, port, ethercatConnected, slaveId, baudRate, parity, stopBits, protocol, stationMax, baudRates, allowUnsupportedBaud, discoveryBaudRates, toggleDiscoveryBaud, selectAllDiscoveryBaudRates, timeoutMs, connectionBlockedReason, values, drafts, statuses, statusUpdatedAt, audit, comparison, snapshotExportPath, selectedBatch, scopeRunning, sampleInterval, scopeChannels, scopeData, query, selectedGroup, busy, notice, errorMessage, statusTimer, pollingEnabled, communicationError, retries, maxRegisters, communicationStats, readActive, cancelRequested, readProgress, failedGroups, staleIds, testActive, testCycles, testProgress, testResults, pollInFlight, disposed, discoveryActive, discovery, discoveryMessage, discoveryStart, discoveryEnd, discoveryTimeout, discoveryTimer, probeRange, groups, comparisonById, changedDifferences, headlineStatuses, scopePalette, scopeSeries, scopeOptions, canApply, canPersist, filteredParameters, confirmReq, confirmInput, confirmError, confirmField, confirmResolve, confirmOpener, serialModeLabel, pollDiscovery, discoverConnection, cancelDiscovery, updateDiagnostics, applyCommunicationSettings, saveCommunicationSettings, pauseForOperation, runStabilityTest, requestConfirm, closeConfirm, showError, loadProfileJson, handleProfileFile, refreshPorts, connect, disconnect, readAll, readParameterGroups, exportSnapshot, handleSnapshotFile, writeSelectedBatch, clearComparison, writeOne, applyChanges, persistChanges, scheduleStatusPoll, normalizeSampleInterval, refreshAudit, isDirty, riskLabel, hex, formatTimestamp };
+  return { backgroundActivity, activePage, currentPage, communicationTab, profile, summary, connected, connectionMode, ports, portName, bleDevices, bleDeviceAddress, bleScanning, refreshBleDevices, host, port, ethercatConnected, slaveId, baudRate, parity, stopBits, protocol, stationMax, baudRates, allowUnsupportedBaud, discoveryBaudRates, toggleDiscoveryBaud, selectAllDiscoveryBaudRates, timeoutMs, connectionBlockedReason, values, drafts, statuses, statusUpdatedAt, audit, comparison, snapshotExportPath, selectedBatch, scopeRunning, sampleInterval, scopeChannels, scopeData, query, selectedGroup, busy, notice, errorMessage, statusTimer, pollingEnabled, communicationError, retries, maxRegisters, communicationStats, readActive, cancelRequested, readProgress, failedGroups, staleIds, testActive, testCycles, testProgress, testResults, pollInFlight, disposed, discoveryActive, discovery, discoveryMessage, discoveryStart, discoveryEnd, discoveryTimeout, discoveryTimer, probeRange, groups, comparisonById, changedDifferences, headlineStatuses, scopePalette, scopeSeries, scopeOptions, canApply, canPersist, filteredParameters, confirmReq, confirmInput, confirmError, confirmField, confirmResolve, confirmOpener, serialModeLabel, pollDiscovery, discoverConnection, cancelDiscovery, updateDiagnostics, applyCommunicationSettings, saveCommunicationSettings, pauseForOperation, runStabilityTest, requestConfirm, closeConfirm, showError, loadProfileJson, handleProfileFile, refreshPorts, connect, disconnect, readAll, readParameterGroups, exportSnapshot, handleSnapshotFile, writeSelectedBatch, clearComparison, writeOne, applyChanges, persistChanges, scheduleStatusPoll, normalizeSampleInterval, refreshAudit, isDirty, riskLabel, hex, formatTimestamp };
 }

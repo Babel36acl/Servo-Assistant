@@ -15,13 +15,14 @@ pub struct SnapshotExport {
 #[tauri::command]
 pub async fn export_parameter_snapshot(
     app: tauri::AppHandle,
-    window: tauri::WebviewWindow,
+    #[cfg_attr(mobile, allow(unused_variables))] window: tauri::WebviewWindow,
     state: State<'_, AppState>,
 ) -> Result<Option<SnapshotExport>, String> {
-    let mut dialog = app
-        .dialog()
-        .file()
-        .set_parent(&window)
+    let dialog = app.dialog().file();
+    // set_parent 只存在于桌面 target；移动端由系统接管对话框层级。
+    #[cfg(desktop)]
+    let dialog = dialog.set_parent(&window);
+    let mut dialog = dialog
         .set_title("导出参数快照 — 选择保存位置")
         .add_filter("参数快照 (*.servo-snapshot.json)", &["json"])
         .set_file_name(format!(
