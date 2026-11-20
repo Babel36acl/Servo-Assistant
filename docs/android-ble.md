@@ -49,3 +49,17 @@ Android 12+ 扫描/连接需要 `BLUETOOTH_SCAN`/`BLUETOOTH_CONNECT` 运行时�
 - 平板上自绘标题栏（decorations:false + data-tauri-drag-region）尚未做 Android 安全区适配，会顶进系统状态栏；窄屏 BottomNav 形态本身可用。首次平板联调时按 `env(safe-area-inset-*)` 补一次壳层样式。
 - BLE 吞吐按 2M PHY / MTU 247 / 连接间隔 15ms 估约 30~60 KB/s；一轮 FC03 读 16 寄存器 < 20ms，状态轮询 250ms 档绰绰有余。
 - 若 BLE 不通先查 485 接线：桥固件按乐鑫 datasheet U0TXD=GPIO17 / U0RXD=GPIO16，与 Waveshare wiki 快查表标注相反，实测对调为准。
+
+## 本仓实测过的构建坑（fnOS NAS 上）
+
+- `tauri-plugin-blec` 要求 **minSdk 26**，已在 `gen/android/app/build.gradle.kts` 固化；重新 `tauri android init` 会重置它，记得改回。
+- /vol4 的 trim ZFS 上 tauri CLI 往 `jniLibs` 建软链会报 `Invalid cross-device link`（同卷也复现）。绕法：CLI 跑完 Rust 交叉编译后失败无妨，手动把 `target/aarch64-linux-android/debug/libservo_assistant_lib.so` **copy** 进 `gen/android/app/src/main/jniLibs/arm64-v8a/`，再裸 gradle 打包：
+
+  ```sh
+  cd src-tauri/gen/android
+  ./gradlew assembleUniversalDebug -x rustBuildArm64Debug -x rustBuildArmDebug -x rustBuildX86Debug -x rustBuildX86_64Debug
+  ```
+
+  （gradle 的 rust 任务要求 `tauri android build` CLI 驻留运行，所以直接排除它们；产物在 `app/build/outputs/apk/universal/debug/`。）
+- debug APK 约 200MB 是 Rust debug 符号所致，属正常；正式发布走 `--target aarch64` + release/proguard。
+- gradle 走代理：`GRADLE_OPTS="-Dhttps.proxyHost=… -Dhttps.proxyPort=…" pnpm tauri android build`。
