@@ -28,18 +28,9 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      # 官方 runner 自带 Android SDK；android-actions/setup-android@v3 已坏
-      # （sdkmanager 找不到 'tools' 包），直接用镜像里的 sdkmanager 装平台与 NDK
-      - name: 安装平台与 NDK r27c
-        run: |
-          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-          SDKM="$(command -v sdkmanager || ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | head -1)"
-          echo "sdkmanager: $SDKM"
-          yes | "$SDKM" --licenses > /dev/null 2>&1 || true
-          "$SDKM" --install "platforms;android-37" "ndk;27.2.12479018" > /dev/null
-          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
-          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+      # 官方 runner 镜像自带完整 Android SDK：platform android-37.x、
+      # build-tools 37.0.0、NDK 27.3（ANDROID_HOME/ANDROID_NDK_HOME 已设好），
+      # 不需要任何 setup-android/ndk 动作或 sdkmanager 安装步骤
 
       - uses: dtolnay/rust-toolchain@stable
         with:
