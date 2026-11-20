@@ -1,0 +1,54 @@
+name: 安卓构建
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "src-tauri/**"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: android-actions/setup-ndk@v3
+        with:
+          ndk-version: r27c
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: 前端测试与构建
+        run: pnpm test
+
+      - name: 编译安卓 debug APK（arm64）
+        run: pnpm tauri android build --debug --target aarch64
+
+      - name: 上传 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: servo-assistant-debug-apk
+          path: src-tauri/gen/android/app/build/outputs/apk/**/debug/*.apk
+          if-no-files-found: error
