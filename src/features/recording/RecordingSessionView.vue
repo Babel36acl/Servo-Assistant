@@ -5,18 +5,17 @@ import { invoke } from '@tauri-apps/api/core';
 import RecordingLibrary from './RecordingLibrary.vue';
 import RecordingHistory from './RecordingHistory.vue';
 const emit = defineEmits<{ activity: [label: string] }>();
-type RecordItem = { sequence: number; timestampUs: number; source: string; protocol: string; direction: string; transaction: number; bytes: number[]; detail: string };
-type Page = { records: RecordItem[]; nextOffset: number | null; warning: string | null; total?: number; offset?: number };
-type ModbusFrame = { hex: string; checksum: string; slave: number | null; function: number | null; address: number | null; count: number | null; values: number[]; exception: string | null; error: string | null };
-type ModbusTransaction = { source: string; protocol: string; transaction: number; outcome: string; durationUs: number | null; request: ModbusFrame; response: ModbusFrame; events: string[]; warning: string | null };
-type RecordingStatus = { active: boolean; path: string; accepted: number; written: number; dropped: number; unwritten: number; bytes: number; error: string | null; armed?: boolean; discarded?: number; triggeredAtUs?: number | null };
-type CaptureStatus = { active: boolean; path: string; packets: number; bytes: number; driverDropped: number | null; error: string | null };
+import RecordingDetailPanel from './RecordingDetailPanel.vue';
+import RecordingFilterPanel from './RecordingFilterPanel.vue';
+import RecordingRecordList from './RecordingRecordList.vue';
+import { timeLabel as time } from './format';
+import type { CaptureStatus, ModbusTransaction, Page, RecordItem, RecordingStatus } from './types';
 const error = ref(''), notice = ref(''), busy = ref(false), limit = ref(1024);
 const status = ref<RecordingStatus | null>(null), capture = ref<CaptureStatus | null>(null);
 watch(() => [status.value?.active, status.value?.error, capture.value?.active, capture.value?.error], () => emit('activity', [status.value?.error ? '录制异常：' + status.value.error : status.value?.active ? '通信录制中' : '', capture.value?.error ? '捕获异常：' + capture.value.error : capture.value?.active ? '网卡捕获中' : ''].filter(Boolean).join(' · ')), { immediate: true });
 const sessions = ref<string[]>([]), path = ref(''), fileMode = ref(false), offset = ref(0), next = ref<number | null>(null);
 const rows = ref<RecordItem[]>([]), query = ref(''), direction = ref(''), selected = ref<RecordItem | null>(null), decoded = ref<unknown>(null);
-const recordTable = ref<HTMLElement | null>(null);
+const recordList = ref<{ listEl: HTMLElement | null } | null>(null);
 const follow = ref(false), pageBusy = ref(false), browseError = ref(''), pageWarning = ref(''), total = ref<number | null>(null);
 const modbusDetail = ref<ModbusTransaction | null>(null), detailBusy = ref(false);
 const triggerEnabled = ref(false), preSeconds = ref(30), postSeconds = ref(10), triggerKeyword = ref('');
@@ -58,7 +57,7 @@ async function page(at: number, tail = false) {
     if (version !== pageVersion || disposed) return;
     rows.value = p.records; offset.value = p.offset ?? at; next.value = p.nextOffset;
     total.value = p.total ?? null; pageWarning.value = p.warning ?? ''; clearDetail();
-    if (tail) { await nextTick(); if (version === pageVersion && follow.value && recordTable.value) recordTable.value.scrollTop = recordTable.value.scrollHeight; }
+    if (tail) { await nextTick(); const listEl = recordList.value?.listEl; if (version === pageVersion && follow.value && listEl) listEl.scrollTop = listEl.scrollHeight; }
   } catch (e) { if (version === pageVersion && !disposed) { browseError.value = String(e); follow.value = false; } }
   finally { if (version === pageVersion) pageBusy.value = false; }
 }
@@ -85,8 +84,6 @@ async function details(r: RecordItem) {
   } catch (e) { if (version === detailVersion && !disposed) browseError.value = String(e); }
   finally { if (version === detailVersion) detailBusy.value = false; }
 }
-function hex(bytes: number[]) { return bytes.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' '); }
-function time(us: number) { return us ? new Date(us / 1000).toLocaleString() + `.${String(us % 1000000).padStart(6, '0')}` : '时间未知'; }
 async function importMap(e: Event) { const f = (e.target as HTMLInputElement).files?.[0]; if (!f) return; await action(async () => { if (f.size > 1024 * 1024) throw new Error('映射文件超过 1 MiB'); const text = await f.text(); await invoke('decode_ethercat', { bytes: [], config: JSON.parse(text) }); mapping.value = text; }); }
 async function saveMapping() { await action(async () => { await invoke('recording_mapping',{ config:JSON.parse(mapping.value) }); notice.value='已保存当前映射；后续录制记录使用此次配置。'; }); }
 async function openSession(value: string, mode: boolean) { path.value=value; fileMode.value=mode; clearFilters(); await nextTick(); await page(0); }
@@ -310,86 +307,28 @@ onMounted(() => { void tick(); }); onUnmounted(() => { disposed = true; pageVers
       </div>
     </section>
 
-    <section class="ksu-card ksu-span-2">
-      <div class="ksu-card-head">
-        <div>
-          <h2 class="ksu-card-title">筛选与检索</h2>
-          <p class="ksu-card-sub">全部筛选作用于整个会话；站号、地址和结果关联完整事务</p>
-        </div>
-        <div class="ksu-card-actions">
-          <button class="ksu-btn ksu-btn--sm" @click="clearFilters">清除筛选</button>
-        </div>
-      </div>
-      <div class="ksu-card-body">
-        <div class="ksu-form-grid">
-          <label class="ksu-field">
-            <span class="ksu-field-label">报文筛选</span>
-            <input class="ksu-input" v-model="query" :placeholder="fileMode ? '全部 PCAP 分卷搜索：来源、协议、事件、字节' : '全会话搜索：来源、协议、事务、事件、十六进制字节'" aria-label="报文筛选" />
-          </label>
-          <label class="ksu-field">
-            <span class="ksu-field-label">方向</span>
-            <select class="ksu-select" v-model="direction" aria-label="方向筛选">
-              <option value="">所有方向</option>
-              <option>tx</option>
-              <option>rx</option>
-              <option>event</option>
-              <option>unknown</option>
-            </select>
-          </label>
-        </div>
-        <div class="ksu-actions">
-          <button class="ksu-btn ksu-btn--sm" :disabled="busy || pageBusy || offset === 0" @click="page(Math.max(0, offset - 100))">上一页</button>
-          <button class="ksu-btn ksu-btn--sm" :disabled="busy || pageBusy || next === null" @click="page(next!)">下一页</button>
-          <span class="ksu-hint">{{ total === null ? '本页 ' + rows.length + ' 条' : '共 ' + total + ' 条匹配 · ' + (rows.length ? offset + 1 : 0) + '–' + (offset + rows.length) }}{{ follow ? ' · 自动跟随中' : '' }}</span>
-        </div>
-
-        <details class="ksu-field" open>
-          <summary class="ksu-field-label">时间与协议精确筛选</summary>
-          <div class="ksu-form-grid">
-            <label class="ksu-field">
-              <span class="ksu-field-label">开始</span>
-              <input class="ksu-input" v-model="fromTime" type="datetime-local" step="0.001" />
-            </label>
-            <label class="ksu-field">
-              <span class="ksu-field-label">结束</span>
-              <input class="ksu-input" v-model="toTime" type="datetime-local" step="0.001" />
-            </label>
-            <label class="ksu-field">
-              <span class="ksu-field-label">来源精确匹配</span>
-              <input class="ksu-input" v-model="sourceFilter" placeholder="来源精确匹配（可从报文复制）" aria-label="来源筛选" />
-            </label>
-            <label class="ksu-field">
-              <span class="ksu-field-label">协议</span>
-              <input class="ksu-input" v-model="protocolFilter" placeholder="协议，如 modbus-rtu / ethernet" aria-label="协议筛选" />
-            </label>
-          </div>
-          <div v-if="!fileMode" class="ksu-form-grid">
-            <label class="ksu-field">
-              <span class="ksu-field-label">站号</span>
-              <input class="ksu-input" v-model="slaveFilter" placeholder="站号" aria-label="站号筛选" />
-            </label>
-            <label class="ksu-field">
-              <span class="ksu-field-label">功能码</span>
-              <input class="ksu-input" v-model="functionFilter" placeholder="功能码，如 3 / 0x06" aria-label="功能码筛选" />
-            </label>
-            <label class="ksu-field">
-              <span class="ksu-field-label">寄存器地址</span>
-              <input class="ksu-input" v-model="addressFilter" placeholder="包含寄存器地址，如 0x100" aria-label="地址筛选" />
-            </label>
-            <label class="ksu-field">
-              <span class="ksu-field-label">事务结果</span>
-              <select class="ksu-select" v-model="outcomeFilter" aria-label="事务结果筛选">
-                <option value="">所有事务结果</option>
-                <option value="success">成功</option>
-                <option value="failure">失败 / 设备异常</option>
-                <option value="incomplete">缺少事务结束</option>
-              </select>
-            </label>
-          </div>
-        </details>
-        <p class="ksu-hint">{{ fileMode ? '搜索与时间筛选覆盖所选文件或目录中的全部 PCAP 分卷。首次建立缓存可能较慢；源文件变化后重建，请优先打开已停止的捕获。' : '全部筛选作用于整个会话；站号、地址和结果关联完整事务。跟随显示最新 100 条已落盘匹配记录，查看详情时录制继续。' }}</p>
-      </div>
-    </section>
+    <RecordingFilterPanel
+      v-model:query="query"
+      v-model:direction="direction"
+      v-model:from-time="fromTime"
+      v-model:to-time="toTime"
+      v-model:source-filter="sourceFilter"
+      v-model:protocol-filter="protocolFilter"
+      v-model:slave-filter="slaveFilter"
+      v-model:function-filter="functionFilter"
+      v-model:address-filter="addressFilter"
+      v-model:outcome-filter="outcomeFilter"
+      :file-mode="fileMode"
+      :busy="busy"
+      :page-busy="pageBusy"
+      :follow="follow"
+      :offset="offset"
+      :row-count="rows.length"
+      :total="total"
+      :next-offset="next"
+      @clear="clearFilters"
+      @page="page($event)"
+    />
 
     <section class="ksu-card">
       <div class="ksu-card-head">
@@ -416,91 +355,26 @@ onMounted(() => { void tick(); }); onUnmounted(() => { disposed = true; pageVers
 
     <RecordingHistory :path="path" :file-mode="fileMode" :from-us="fromUs" :to-us="toUs" @select="locatePoint" />
 
-    <section class="ksu-card ksu-span-full">
-      <div class="ksu-card-head">
-        <div>
-          <h2 class="ksu-card-title">报文列表</h2>
-          <p class="ksu-card-sub">丢包、清空缓冲和未完整落盘的数据均不能视为完整总线记录 · {{ total === null ? '本页 ' + visible.length + ' 条' : '共 ' + total + ' 条匹配' }}</p>
-        </div>
-        <div class="ksu-card-actions">
-          <span v-if="follow" class="ksu-pill ksu-pill--ok">自动跟随</span>
-          <span v-if="pageBusy" class="ksu-pill ksu-pill--warn">检索中</span>
-        </div>
-      </div>
-      <div v-if="browseError" class="ksu-banner ksu-banner--error" role="alert">
-        <div class="ksu-banner-body"><span>{{ browseError }}</span></div>
-      </div>
-      <div v-if="pageWarning" class="ksu-banner ksu-banner--info" role="status">
-        <div class="ksu-banner-body"><span>{{ pageWarning }}</span></div>
-      </div>
-      <div ref="recordTable" class="ksu-list" @wheel.passive="pauseFollow" @focusin="pauseFollow">
-        <button
-          v-for="r in visible" :key="r.sequence" type="button" class="ksu-row"
-          :aria-current="selected === r ? 'true' : undefined" @click="details(r)"
-        >
-          <div class="ksu-row-body">
-            <span class="ksu-row-title mono">#{{ r.sequence }} · {{ r.source }}</span>
-            <span class="ksu-row-sub">{{ time(r.timestampUs) }} · {{ r.protocol }} · {{ r.direction }} / 事务 {{ r.transaction || '—' }}</span>
-            <span class="ksu-row-sub">{{ r.bytes.length }} 字节 · {{ r.detail }}</span>
-          </div>
-          <span class="ksu-row-chevron" aria-hidden="true">›</span>
-        </button>
-        <div v-if="!visible.length" class="ksu-empty">{{ pageBusy ? '正在建立索引或检索报文…' : '没有匹配的报文。打开会话、清除筛选或开启跟随查看新记录。' }}</div>
-      </div>
-    </section>
+    <RecordingRecordList
+      ref="recordList"
+      :rows="visible"
+      :total="total"
+      :page-busy="pageBusy"
+      :follow="follow"
+      :browse-error="browseError"
+      :page-warning="pageWarning"
+      :selected="selected"
+      @select="details"
+      @pause="pauseFollow"
+    />
 
 
 
-    <section v-if="detailBusy" class="ksu-card ksu-span-full">
-      <div class="ksu-card-body"><p class="ksu-hint" role="status">正在关联完整事务…</p></div>
-    </section>
-
-    <section v-if="modbusDetail" class="ksu-card ksu-span-full">
-      <div class="ksu-card-head">
-        <div>
-          <h3 class="ksu-card-title">Modbus 事务 #{{ modbusDetail.transaction }} · {{ modbusDetail.outcome }}</h3>
-          <p class="ksu-card-sub">{{ modbusDetail.source }} · {{ modbusDetail.protocol }} · 应用观测耗时 {{ modbusDetail.durationUs === null ? '未知' : modbusDetail.durationUs + ' μs' }}（不是线缆传输时间）</p>
-        </div>
-      </div>
-      <div class="ksu-card-body">
-        <div v-if="modbusDetail.warning" class="ksu-banner ksu-banner--info"><div class="ksu-banner-body"><span>{{ modbusDetail.warning }}</span></div></div>
-        <div class="ksu-form-grid">
-          <div v-for="(frame, i) in [modbusDetail.request, modbusDetail.response]" :key="i" class="ksu-field">
-            <span class="ksu-field-label">{{ i ? '响应' : '请求' }} · {{ frame.checksum }}</span>
-            <p class="ksu-hint">站号 {{ frame.slave ?? '—' }} · 功能码 {{ frame.function === null ? '—' : '0x' + frame.function.toString(16).toUpperCase() }} · 起始地址 {{ frame.address === null ? '—' : '0x' + frame.address.toString(16).toUpperCase() }} · 数量 {{ frame.count ?? '—' }}</p>
-            <p v-if="frame.error" class="ksu-hint" role="alert">{{ frame.error }}</p>
-            <p v-if="frame.exception" class="ksu-hint" role="alert">{{ frame.exception }}</p>
-            <pre class="mono">{{ frame.hex || '未记录字节' }}</pre>
-            <p v-if="frame.values.length" class="ksu-hint">原始寄存器值（未按设备 Profile 缩放）</p>
-            <pre v-if="frame.values.length" class="mono">{{ frame.values.join(', ') }}</pre>
-          </div>
-        </div>
-        <details class="ksu-field">
-          <summary class="ksu-field-label">事务事件（包含部分收发、清空与结束结果）</summary>
-          <pre class="mono">{{ modbusDetail.events.join('\n') || '无事件' }}</pre>
-        </details>
-      </div>
-    </section>
-
-    <section v-if="selected && !modbusDetail && !detailBusy" class="ksu-card ksu-span-full">
-      <div class="ksu-card-head">
-        <div>
-          <h3 class="ksu-card-title">记录 #{{ selected.sequence }} 原始内容</h3>
-          <p class="ksu-card-sub">{{ selected.source }} · {{ selected.protocol }} · {{ time(selected.timestampUs) }}</p>
-        </div>
-      </div>
-      <div class="ksu-card-body">
-        <div class="ksu-form-grid">
-          <div class="ksu-field">
-            <span class="ksu-field-label">原始字节</span>
-            <pre class="mono">{{ hex(selected.bytes) || '无字节，只有事件' }}</pre>
-          </div>
-          <div class="ksu-field">
-            <span class="ksu-field-label">标准字段解析</span>
-            <pre class="mono">{{ decoded ? JSON.stringify(decoded, null, 2) : '该记录保留原始内容；没有可用的结构化协议解析。' }}</pre>
-          </div>
-        </div>
-      </div>
-    </section>
+    <RecordingDetailPanel
+      :detail-busy="detailBusy"
+      :modbus-detail="modbusDetail"
+      :selected="selected"
+      :decoded="decoded"
+    />
   </div>
 </template>
