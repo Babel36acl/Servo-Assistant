@@ -671,12 +671,25 @@ pre,
   min-width: 0;
 }
 
-/* 指标条：KPI 小卡按 180 起排，宽屏能一行放下 6 个（dashboard 密度） */
-.ksu-stat-grid {
+/* 指标条：KPI 小卡固定 2 / 3 / 6 列分档。
+   不用 auto-fit：6 个指标在“只能排 5 列”的宽度会落单成 5+1，行列都留洞。 */
+.ksu-kpi-strip {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--ksu-grid-gap);
   min-width: 0;
+}
+
+@media (min-width: 700px) {
+  .ksu-kpi-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1360px) {
+  .ksu-kpi-strip {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
 }
 
 .ksu-span-2 {

@@ -193,9 +193,16 @@
   overflow-wrap: anywhere;
 }
 
-/* 居中的大数字卡在窄卡里不再撑出横向滚动 */
-.ksu-page .ksu-stat-grid > .ksu-card {
+/* 大数字卡在窄卡里不再撑出横向滚动 */
+.ksu-page .ksu-kpi-strip > .ksu-card {
   min-width: 0;
+}
+
+/* KPI 卡只有 2 列时（手机宽）数值降一档，避免 40px 数字撑破卡片 */
+@media (max-width: 699.98px) {
+  .ksu-page .ksu-kpi-strip .ksu-stat-value {
+    font-size: var(--ksu-fs-large-title);
+  }
 }
 
 /* 连接方式五选一：2 列换行后最后一项独占一行，避免右侧留半格空洞 */

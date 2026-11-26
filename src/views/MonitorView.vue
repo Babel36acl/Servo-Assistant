@@ -29,7 +29,7 @@ function toggleChannel(id: string): void {
     </header>
 
     <div class="ksu-page-body">
-      <div class="ksu-stat-grid ksu-span-full">
+      <div class="ksu-kpi-strip">
         <section v-for="status in headlineStatuses" :key="status.id" class="ksu-card ksu-card--sm">
           <div class="ksu-card-body">
             <div class="ksu-stat">

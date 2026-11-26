@@ -60,7 +60,7 @@
 ## 5. 排版与响应式基线
 
 - 卡片栅格两种：`.ksu-grid`（auto-fit 340 起排，同排等高，跨列用 `.ksu-span-2` / `.ksu-span-full`）
-  与 `.ksu-stat-grid`（180 起排，KPI 小卡专用，1440 宽可一行 6 个）。
+  与 `.ksu-kpi-strip`（KPI 小卡专用，固定 2 / 3 / 6 列分档：`<700` 两列、`≥700` 三列、`≥1360` 一行 6 个）。
 - 双列板式用 `.ksu-columns > .ksu-col.ksu-col--wide + .ksu-col.ksu-col--narrow`：
   两列各自纵向堆叠，短卡不会在另一列留下空洞；<900 自动退化为单列。
 - 行就用 `.ksu-list > .ksu-row`（最小高 56，左右 16），卡内横排按钮用 `.ksu-actions`，
