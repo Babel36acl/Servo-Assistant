@@ -194,7 +194,7 @@ cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 
 ## 9. 本轮验证（2026-10-30）
 
-- `pnpm lint:tokens`：通过（仅 `styles.css` 存量冻结告警）。
+- `pnpm lint:tokens`：通过，零告警（`styles.css` 已退役）。
 - `pnpm build`：通过（vue-tsc 0 错误，81 模块）。
 - `pnpm test`：25 项通过（新增自动查找多波特率与 Modbus TCP 连接断言）。
 - `cargo test --manifest-path src-tauri/Cargo.toml --lib`：71 项通过（含诊断/对象字典 ABI 与类型映射断言），1 项崩溃恢复子进程入口按设置忽略。

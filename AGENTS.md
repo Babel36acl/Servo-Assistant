@@ -16,6 +16,9 @@ pnpm test          # node --test tests/*.test.mjs（25 用例）
 scripts\with-msvc.cmd cargo test --manifest-path src-tauri/Cargo.toml
 scripts\with-msvc.cmd cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 scripts\with-msvc.cmd pnpm tauri dev
+# 本机没有 VS Build Tools 时：Linux 目标的 cargo test / clippy 改在 WSL 里跑
+# （CARGO_TARGET_DIR 放 WSL 原生盘，别放 /mnt/c）；Windows 专属代码交给 CI 的 Windows job。
+wsl -d archlinux -- bash -lc 'cd /mnt/c/<仓库> && CARGO_TARGET_DIR=~/target-sa cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D warnings'
 ```
 
 ## 架构（FlClash 改版之后）
