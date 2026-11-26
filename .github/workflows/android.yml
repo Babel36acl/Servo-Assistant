@@ -8,6 +8,11 @@ on:
       - ".github/workflows/android.yml"
   workflow_dispatch:
 
+# main 连续推送时只保留最新一次冒烟构建，避免排队堆积。
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   android:
     runs-on: ubuntu-latest
