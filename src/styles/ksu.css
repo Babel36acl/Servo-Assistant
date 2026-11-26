@@ -2164,6 +2164,29 @@ a.ksu-row:active {
 }
 
 /* ==========================================================================
+   17. 触控保底：指针粗（平板 / 触摸屏）或窄窗口时，可点控件至少 44 高
+   （原 bridge-a.css 的平板保底；checkbox/radio 不放大，交给行点击区）
+   ========================================================================== */
+@media (pointer: coarse), (max-width: 1023.98px) {
+  .ksu-main button,
+  .ksu-main select,
+  .ksu-main textarea,
+  .ksu-main summary,
+  .ksu-sheet button,
+  .ksu-sheet select,
+  .ksu-sheet textarea {
+    min-height: var(--ksu-touch-min);
+  }
+
+  .ksu-main button.ksu-switch,
+  .ksu-main button.ksu-winctl-close,
+  .ksu-main input[type='checkbox'],
+  .ksu-main input[type='radio'] {
+    min-height: 0;
+  }
+}
+
+/* ==========================================================================
    20. 全局状态横幅 → 右下角 toast（FlClash 语言：不挤占页面流）
    页面内容不再被常驻 notice 顶下去；进度/错误/后台任务仍常显在最上层。
    ========================================================================== */
