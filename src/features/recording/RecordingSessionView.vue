@@ -226,7 +226,7 @@ onMounted(() => { void tick(); }); onUnmounted(() => { disposed = true; pageVers
         <div class="ksu-form-grid">
           <label class="ksu-field">
             <span class="ksu-field-label">捕获网卡</span>
-            <div class="inline-field">
+            <div class="ksu-inline">
               <select class="ksu-select" v-model="adapter" :disabled="capture?.active">
                 <option value="">选择捕获网卡</option>
                 <option v-for="a in adapters" :key="a.name" :value="a.name">{{ a.description }}</option>
@@ -292,7 +292,7 @@ onMounted(() => { void tick(); }); onUnmounted(() => { disposed = true; pageVers
             </div>
           </div>
         </div>
-        <div class="inline-field">
+        <div class="ksu-inline">
           <input class="ksu-input" v-model="path" :placeholder="fileMode ? '输入 PCAP / PCAPNG 文件完整路径' : '录制会话目录完整路径'" aria-label="录制或捕获路径" />
           <button class="ksu-btn ksu-btn--sm" :disabled="busy || pageBusy || !path" @click="page(0)">{{ pageBusy ? '检索中…' : '打开 / 刷新' }}</button>
         </div>
@@ -337,7 +337,7 @@ onMounted(() => { void tick(); }); onUnmounted(() => { disposed = true; pageVers
             </select>
           </label>
         </div>
-        <div class="button-row">
+        <div class="ksu-actions">
           <button class="ksu-btn ksu-btn--sm" :disabled="busy || pageBusy || offset === 0" @click="page(Math.max(0, offset - 100))">上一页</button>
           <button class="ksu-btn ksu-btn--sm" :disabled="busy || pageBusy || next === null" @click="page(next!)">下一页</button>
           <span class="ksu-hint">{{ total === null ? '本页 ' + rows.length + ' 条' : '共 ' + total + ' 条匹配 · ' + (rows.length ? offset + 1 : 0) + '–' + (offset + rows.length) }}{{ follow ? ' · 自动跟随中' : '' }}</span>

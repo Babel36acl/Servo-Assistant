@@ -101,7 +101,7 @@ const { busy, cancelRequested, communicationError, communicationStats, connected
                 </div>
               </div>
             </div>
-            <div class="button-row">
+            <div class="ksu-actions">
               <button class="ksu-btn ksu-btn--tonal" @click="saveCommunicationSettings">应用通讯设置</button>
             </div>
           </div>
@@ -130,7 +130,7 @@ const { busy, cancelRequested, communicationError, communicationStats, connected
               探测区间：{{ probeRange.length ? hex(probeRange[0].address) : '—' }}，短帧 1 / 长帧 {{ probeRange.length }} 个寄存器。
               {{ protocol === 'ascii' ? 'ASCII' : 'RTU' }} 帧长按当前协议换算。
             </p>
-            <div class="button-row">
+            <div class="ksu-actions">
               <button class="ksu-btn ksu-btn--tonal" :disabled="!connected || probeRange.length < 2 || busy" @click="runStabilityTest">短帧 / 长帧只读测试</button>
               <button v-if="readActive || testActive" class="ksu-btn" :disabled="cancelRequested" @click="cancelRequested = true">{{ cancelRequested ? '正在等待当前事务结束' : '取消当前读取 / 测试' }}</button>
             </div>

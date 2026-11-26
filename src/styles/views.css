@@ -18,27 +18,7 @@
   max-width: 24rem;
 }
 
-/* 卡内按钮组 / 行内控件：契约只给行控件，卡内横排仍沿用旧业务类名 */
-.ksu-page .button-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--ksu-space-2);
-}
-
-.ksu-page .inline-field {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--ksu-space-2);
-  min-width: 0;
-}
-
-.ksu-page .inline-field > .ksu-input,
-.ksu-page .inline-field > .ksu-select {
-  flex: 1 1 220px;
-  min-width: 0;
-}
+/* 卡内按钮组 / 行内控件：统一用 ksu.css 的 .ksu-actions / .ksu-inline */
 
 /* 行尾编辑控件：参数目标值 / 对象待写值等窄输入 */
 .ksu-page .ksu-row-control > .ksu-input,

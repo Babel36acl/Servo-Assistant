@@ -88,7 +88,7 @@ function advance() { if(!playing.value) return; select(cursor.value); if(cursor.
         </div>
 
         <template v-if="history">
-          <div class="button-row">
+          <div class="ksu-actions">
             <button class="ksu-btn ksu-btn--sm" :disabled="busy || !history.offset" @click="load(Math.max(0,history.offset-2000))">更早</button>
             <button class="ksu-btn ksu-btn--sm" :disabled="busy || history.offset+history.points.length>=history.total" @click="load(history.offset+2000)">更晚</button>
             <span class="ksu-hint">{{ history.total }} 点 · {{ history.offset+1 }}–{{ history.offset+history.points.length }}</span>
@@ -106,7 +106,7 @@ function advance() { if(!playing.value) return; select(cursor.value); if(cursor.
             </svg>
           </div>
           <p v-for="g in graph" :key="g.name" class="ksu-hint" :style="{ color:g.color }">{{ g.name }} · {{ g.min }}…{{ g.max }}（各定义独立缩放）</p>
-          <div v-if="history.points.length" class="button-row">
+          <div v-if="history.points.length" class="ksu-actions">
             <button class="ksu-btn ksu-btn--sm" @click="play">{{ playing ? '暂停浏览' : '逐点浏览（0.5 秒/点）' }}</button>
             <input v-model.number="cursor" type="range" class="ksu-slider" min="0" :max="history.points.length-1" aria-label="历史采样点" @input="pause(); select(cursor)" />
             <button class="ksu-btn ksu-btn--sm" @click="select(cursor)">定位对应事务</button>

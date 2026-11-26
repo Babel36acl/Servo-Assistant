@@ -154,7 +154,7 @@ onUnmounted(() => {
       </div>
       <p v-if="connected" class="ksu-hint">设备已连接。扫描需要独占链路，请先在“设备与连接”中断开。</p>
       <p v-else-if="!endpointReady" class="ksu-hint">请在“连接参数”中选择串口或填写 Modbus TCP 主机与端口。</p>
-      <div class="button-row">
+      <div class="ksu-actions">
         <button class="ksu-btn ksu-btn--primary" :disabled="!canStart" @click="start">开始扫描</button>
         <button v-if="scanning" class="ksu-btn" :disabled="cancelling" @click="cancel">{{ cancelling ? '正在取消' : '取消扫描' }}</button>
         <button class="ksu-btn ksu-btn--tonal" :disabled="!status?.values.length" @click="exportCsv">导出 CSV</button>

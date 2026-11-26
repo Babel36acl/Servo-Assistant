@@ -100,7 +100,7 @@ const modbusMode = computed(() => connectionMode.value !== "ethercat");
               <strong>从设备配置开始</strong>
               <p>导入设备 JSON Profile，加载参数定义、寄存器地址和允许的操作。</p>
             </div>
-            <div class="button-row">
+            <div class="ksu-actions">
               <label class="ksu-btn ksu-btn--tonal" :class="{ disabled: busy || connected }">
                 导入 JSON
                 <input type="file" hidden accept="application/json,.json" :disabled="busy || connected" @change="handleProfileFile" />
@@ -139,7 +139,7 @@ const modbusMode = computed(() => connectionMode.value !== "ethercat");
 
             <div class="ksu-field">
               <span class="ksu-field-label">搜索波特率（当前波特率必选，可多选）</span>
-              <div class="button-row">
+              <div class="ksu-actions">
                 <button
                   v-for="rate in baudRates" :key="rate" type="button"
                   class="ksu-btn ksu-btn--sm"
@@ -180,7 +180,7 @@ const modbusMode = computed(() => connectionMode.value !== "ethercat");
 
             <p v-if="discoveryMessage" class="ksu-hint" role="status">{{ discoveryMessage }}</p>
 
-            <div class="button-row">
+            <div class="ksu-actions">
               <button class="ksu-btn ksu-btn--tonal" :disabled="busy || connected || !!connectionBlockedReason" :title="connectionBlockedReason" @click="discoverConnection">自动查找</button>
               <button v-if="discoveryActive" class="ksu-btn" @click="cancelDiscovery">取消查找</button>
             </div>
@@ -228,7 +228,7 @@ const modbusMode = computed(() => connectionMode.value !== "ethercat");
                 <template v-else>
                   <div v-if="connectionMode === 'serial'" class="ksu-field">
                     <span class="ksu-field-label">串口</span>
-                    <div class="inline-field">
+                    <div class="ksu-inline">
                       <select class="ksu-select" v-model="portName" :disabled="connected || busy">
                         <option value="" disabled>请选择串口</option>
                         <option v-for="item in ports" :key="item.name" :value="item.name">{{ item.name }}</option>
@@ -238,7 +238,7 @@ const modbusMode = computed(() => connectionMode.value !== "ethercat");
                   </div>
                   <div v-else-if="connectionMode === 'ble'" class="ksu-field">
                     <span class="ksu-field-label">蓝牙桥设备</span>
-                    <div class="inline-field">
+                    <div class="ksu-inline">
                       <select class="ksu-select" v-model="bleDeviceAddress" :disabled="connected || busy">
                         <option value="" disabled>请扫描并选择 ServoBridge</option>
                         <option v-for="item in bleDevices" :key="item.address" :value="item.address">{{ item.name || item.address }}</option>

@@ -12,6 +12,103 @@
    ========================================================================== */
 
 /* ==========================================================================
+   0. 文档底座：body / 全局重置 / 可访问性兜底
+   旧 src/styles.css 退役后这里是唯一的全局层：颜色只能 token，
+   字号只能 var(--ksu-fs-*)。Teleport 到 body 的弹层（.ksu-sheet-overlay）
+   不在 .ksu-app 内，也靠这一层兜底。
+   ========================================================================== */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  min-width: 360px;
+  min-height: 100dvh;
+  overflow: hidden;
+  color: var(--ksu-on-surface);
+  background: var(--ksu-page);
+  font-family: var(--ksu-font);
+  font-size: var(--ksu-fs-body);
+  line-height: var(--ksu-leading-loose);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: var(--ksu-primary-soft);
+}
+
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+  letter-spacing: -0.01em;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+code,
+pre,
+.mono {
+  font-family: var(--ksu-font-mono);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ksu-primary);
+  outline-offset: 2px;
+  border-radius: var(--ksu-radius-8);
+}
+
+@media (pointer: fine) {
+  html {
+    overscroll-behavior: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .ksu-banner,
+  .ksu-sheet,
+  .ksu-dock,
+  .ksu-status-stack > * {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* ==========================================================================
    1. 整窗
    ========================================================================== */
 .ksu-app {
@@ -27,12 +124,6 @@
   line-height: var(--ksu-leading-normal);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-}
-
-.ksu-app *,
-.ksu-app *::before,
-.ksu-app *::after {
-  box-sizing: border-box;
 }
 
 /* ==========================================================================
@@ -1412,6 +1503,30 @@ a.ksu-row:active {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
+  min-width: 0;
+}
+
+/* 横排动作组（卡内 / 空态里的一排按钮，替代旧 .button-row） */
+.ksu-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ksu-space-2);
+  min-width: 0;
+}
+
+/* 行内控件组：输入 / 下拉 + 一个小按钮（替代旧 .inline-field） */
+.ksu-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ksu-space-2);
+  min-width: 0;
+}
+
+.ksu-inline > .ksu-input,
+.ksu-inline > .ksu-select {
+  flex: 1 1 220px;
   min-width: 0;
 }
 

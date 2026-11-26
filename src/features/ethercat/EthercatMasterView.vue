@@ -83,7 +83,7 @@ onUnmounted(() => { disposed = true; polling.value = false; clearTimeout(timer);
         <div class="ksu-form-grid">
           <label class="ksu-field">
             <span class="ksu-field-label">专用网卡</span>
-            <div class="inline-field">
+            <div class="ksu-inline">
               <select class="ksu-select" aria-label="EtherCAT 专用网卡" v-model="adapter" :disabled="status.connected || busy">
                 <option value="">选择专用网卡</option>
                 <option v-for="a in adapters" :key="a.name" :value="a.name">{{ a.description }}</option>
@@ -122,7 +122,7 @@ onUnmounted(() => { disposed = true; polling.value = false; clearTimeout(timer);
         </div>
       </div>
       <div class="ksu-card-body">
-        <div class="button-row">
+        <div class="ksu-actions">
           <label class="ksu-btn ksu-btn--tonal" :class="{ disabled: busy }">
             导入 Profile JSON
             <input type="file" hidden accept=".json" :disabled="busy" @change="importProfile" />
