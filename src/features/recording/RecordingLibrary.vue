@@ -40,7 +40,7 @@ async function save() {
 <template>
   <div class="ksu-field">
     <span class="ksu-field-label">历史录制会话</span>
-    <div class="inline-field">
+    <div class="ksu-inline">
       <select class="ksu-select" aria-label="历史录制会话" :value="fileMode ? '' : path" @change="choose(($event.target as HTMLSelectElement).value,false)">
         <option value="">选择历史会话</option>
         <option v-for="s in catalog" :key="s.path" :value="s.path">{{ s.annotation.name || s.path.split(/[\\\\/]/).pop() }} · {{ (s.bytes / 1048576).toFixed(1) }} MiB{{ s.warning ? ' · 待检查' : '' }}</option>
@@ -68,12 +68,12 @@ async function save() {
     </div>
     <div class="ksu-row ksu-row--static">
       <div class="ksu-row-body">
-        <div class="inline-field">
+        <div class="ksu-inline">
           <input class="ksu-input" v-model="location" aria-label="浏览目录路径" @keydown.enter="browse(location)" />
           <button class="ksu-btn ksu-btn--sm" :disabled="loading" @click="browse(location)">前往</button>
           <button class="ksu-btn ksu-btn--sm" :disabled="loading || !directory?.parent" @click="browse(directory!.parent!)">上一级</button>
         </div>
-        <div class="button-row">
+        <div class="ksu-actions">
           <button class="ksu-btn ksu-btn--sm ksu-btn--tonal" :disabled="loading || !directory" @click="choose(directory!.path,false)">打开此录制会话</button>
           <button class="ksu-btn ksu-btn--sm" :disabled="loading || !directory" @click="choose(directory!.path,true)">检索此目录全部 PCAP 分卷</button>
         </div>

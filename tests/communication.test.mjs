@@ -1,14 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { dirname, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 const require = createRequire(import.meta.url);
 const ts = require('typescript');
 const vue = require('vue');
 
+const SRC_DIR = fileURLToPath(new URL('../src/', import.meta.url));
+const ENTRY = join(SRC_DIR, 'composables', 'useServo.ts');
+
 // Execute the actual setup logic with a controlled IPC boundary and timer queue.
 // This checks lifecycle behavior, not native WebView rendering or a physical serial link.
+//
+// useServo.ts 现在只做聚合，领域逻辑在 ./servo/*.ts。夹具按“相对 src/ 的路径”递归解析
+// 同级模块（transpile 后在同一 vm 里跑），只对 vue / tauri / api 做替身，
+// 其余相对导入读真实源码，与线上模块图保持一致。
 function fixture(overrides = {}) {
   const timers = new Map();
   let timerId = 0;
@@ -21,28 +30,45 @@ function fixture(overrides = {}) {
     probeRead: async () => ({ success: true, attempts: 1, elapsedMs: 1, error: null }),
     ...overrides,
   };
-  function evaluate(source) {
+  const modules = new Map();
+
+  function evaluate(source, file) {
     const module = { exports: {} };
-    const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
-    vm.runInNewContext(compiled, {
+    // 先登记再执行：循环导入时各方拿到同一个 exports 对象。
+    modules.set(file, module.exports);
+    vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText, {
       module, exports: module.exports,
-      require: id => {
-        if (id === 'vue') return { ...vue, onMounted() {}, onUnmounted() {} };
-        if (id === '../api') return { servoApi: api };
-        if (id === '../communication') return evaluate(readFileSync(new URL('../src/communication.ts', import.meta.url), 'utf8'));
-        if (id === '../shell/activities') return evaluate(readFileSync(new URL('../src/shell/activities.ts', import.meta.url), 'utf8'));
-        return {};
-      },
+      require: id => resolveModule(id, file),
       window: { clearTimeout: id => timers.delete(id), setTimeout: (fn, delay) => { timers.set(++timerId, { fn, delay }); return timerId; } },
       console,
     });
+    modules.set(file, module.exports);
     return module.exports;
   }
+
+  function loadFile(file) {
+    if (modules.has(file)) return modules.get(file);
+    return evaluate(readFileSync(file, 'utf8'), file);
+  }
+
+  function resolveModule(id, fromFile) {
+    if (id === 'vue') return { ...vue, onMounted() {}, onUnmounted() {} };
+    if (id === '@tauri-apps/api/core') return { invoke: async () => { throw new Error('invoke 未在夹具中 mock'); } };
+    if (!id.startsWith('.')) return {};
+    const base = resolve(dirname(fromFile), id);
+    const rel = relative(SRC_DIR, base).split('\\').join('/');
+    if (rel === 'api') return { servoApi: api };
+    for (const candidate of [`${base}.ts`, join(base, 'index.ts')]) {
+      if (existsSync(candidate)) return loadFile(candidate);
+    }
+    return {};
+  }
+
   // P2 起：页面逻辑住在应用状态单例里（src/composables/useServo.ts），
   // 这里直接实例化 createServo()，与线上 App.vue 首个调用方行为一致。
-  const source = readFileSync(new URL('../src/composables/useServo.ts', import.meta.url), 'utf8');
+  const source = readFileSync(ENTRY, 'utf8');
   const names = 'readAll, runStabilityTest, scheduleStatusPoll, pollingEnabled, connected, profile, maxRegisters, values, drafts, staleIds, failedGroups, busy, cancelRequested, readProgress, errorMessage, communicationError, testResults, testCycles, discoverConnection, discovery, discoveryMessage, discoveryActive, portName, slaveId, baudRate, protocol, parity, stopBits, discoveryEnd, connectionBlockedReason, connectionMode, connect, exportSnapshot, snapshotExportPath, notice, allowUnsupportedBaud, discoveryBaudRates, host, port';
-  const app = evaluate(source + `\nconst __s = createServo();\nconst { ${names} } = __s;\nexport { ${names} };`);
+  const app = evaluate(source + `\nconst __s = createServo();\nconst { ${names} } = __s;\nexport { ${names} };`, ENTRY);
   app.connected.value = true;
   app.profile.value = { parameters: [{ parameterId: 'P1', address: 1 }, { parameterId: 'P2', address: 3 }], statuses: [{ id: 'speed', address: 4096 }, { id: 'position', address: 4097 }] };
   return { app, timers, api };

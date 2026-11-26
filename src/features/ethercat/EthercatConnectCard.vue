@@ -88,7 +88,7 @@ function openMaster() {
   <div class="ksu-form-grid">
     <label class="ksu-field">
       <span class="ksu-field-label">专用网卡</span>
-      <div class="inline-field">
+      <div class="ksu-inline">
         <select class="ksu-select" aria-label="EtherCAT 专用网卡" v-model="adapter" :disabled="status.connected || busy">
           <option value="">选择专用网卡</option>
           <option v-for="item in adapters" :key="item.name" :value="item.name">{{ item.description }}</option>
@@ -106,7 +106,7 @@ function openMaster() {
     <div class="ksu-banner-body"><strong>主站操作失败</strong><span>{{ error }}</span></div>
   </div>
 
-  <div class="button-row">
+  <div class="ksu-actions">
     <button v-if="!status.connected" class="ksu-btn ksu-btn--primary" :disabled="busy || !adapter" @click="connectMaster">连接 EtherCAT 主站</button>
     <button v-else class="ksu-btn ksu-btn--danger" :disabled="busy" @click="disconnectMaster">断开主站</button>
     <button class="ksu-btn ksu-btn--tonal" :disabled="busy" @click="refreshStatus">刷新状态</button>

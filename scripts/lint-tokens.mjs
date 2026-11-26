@@ -1,74 +1,87 @@
-// lint:tokens — 色值散写门禁（P0）。
-// 规则：除 src/styles/tokens-a.css 与 src/styles/chart-palette.ts 外，
-// *.css / *.vue <style> / *.ts 内禁止出现 hex（#abc / #aabbcc）与 rgb()/hsl()。
-// 字号/间距裸写只告警（WARN），P2 迁移时再收紧为错误。
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, extname, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+// lint:tokens — 设计令牌门禁（P0，零告警）。
+// 规则（全部为错误，不再有冻结豁免）：
+//   1. 除 src/styles/tokens-a.css 与 src/styles/chart-palette.ts 外，
+//      *.css / *.vue <style> / *.ts 内禁止 hex（#abc / #aabbcc）与 rgb()/rgba()/hsl()/hsla()。
+//   2. 字号禁止裸写（px / rem / em / pt / % / vw / vh），只能 var(--ksu-fs-*)。
+//   3. 禁止引用已退役的旧变量名（--sa-*、bridge-a 时代的 --bg/--panel/--ink/...）。
+// 旧 styles.css 与 bridge-a.css 已删除，所以违规一律阻断提交，不再区分存量。
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join, extname, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "src");
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', 'src');
+// 唯一允许写色值的两个文件：CSS 令牌源 + 图表调色板（JS 色源）。
 const ALLOW = new Set(['src/styles/tokens-a.css', 'src/styles/chart-palette.ts']);
-// 存量散写（P2/P3 迁移时清零）：冻结只删不加，门禁放行但单独计数。
-// P1 新建的 shell/views/features/composables 一律不许进这个名单。
-// P3 已清：RecordingSessionView / EthercatMasterView / RecordingHistory / ScopeChart。
-const LEGACY = new Set([
-  'src/styles.css',
-]);
 const HEX = /#[0-9a-fA-F]{3,8}\b/g;
 const FUNC = /\b(?:rgb|rgba|hsl|hsla)\s*\(/g;
-const FONT_PX = /font-size\s*:\s*\d+px/g;
+// font-size 后面必须是 var(--ksu-fs-*)，或显式继承语义。
+const FONT_SIZE = /font-size\s*:\s*([^;}]+)/g;
+const FONT_VALUE_OK = /^(?:var\(|inherit\b|initial\b|unset\b|revert\b|0\s*$)/;
+// 已退役的旧变量：--sa-* 整族 + bridge-a 映射的短名。
+const LEGACY_VAR = new RegExp(
+  'var\\(\\s*--(?:sa-[a-z0-9-]+|bg|panel|panel-2|glass|glass-strong|glass-wash|line|line-soft|rim|ink|muted|faint|accent|accent-deep|accent-ink|info|green|warning|red|grad-brand|font-sans|font-mono|r-sm|r-md|r-lg|r-xl|r-pill|shadow-soft|shadow-float|ease-out|ease-in-out|fast|base|panel-t)\\b',
+  'g',
+);
 
 function walk(dir, out = []) {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
     const st = statSync(p);
     if (st.isDirectory()) walk(p, out);
-    else if ([".css", ".vue", ".ts"].includes(extname(p))) out.push(p);
+    else if (['.css', '.vue', '.ts'].includes(extname(p))) out.push(p);
   }
   return out;
 }
 
 function styleOfVue(text) {
   const blocks = [...text.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((m) => m[1]);
-  return blocks.join("\n");
+  return blocks.join('\n');
 }
 
-function styleOfTs(text) {
-  // 调色板模块是色值的唯一 JS 落点，其余 TS 不许散写
-  return text;
-}
-
+const files = walk(ROOT);
 let errors = 0;
-let warns = 0;
-let legacy = 0;
-for (const file of walk(ROOT)) {
-  const rel = ("src" + file.slice(ROOT.length)).replace(/\\/g, "/");
+
+for (const file of files) {
+  const rel = ('src' + file.slice(ROOT.length)).replace(/\\/g, '/');
   if (ALLOW.has(rel)) continue;
-  const raw = readFileSync(file, "utf8");
-  const text = file.endsWith(".vue") ? styleOfVue(raw) : file.endsWith(".ts") ? styleOfTs(raw) : raw;
+  const raw = readFileSync(file, 'utf8');
+  const isVue = file.endsWith('.vue');
+  const isTs = file.endsWith('.ts');
+  const text = isVue ? styleOfVue(raw) : raw;
   if (!text.trim()) continue;
-  // TS 只查色值，不查字号（逻辑文件无 font-size 语义）
-  const skipFontCheck = file.endsWith(".ts");
-  const hexes = [...text.matchAll(HEX)].map((m) => m[0]).slice(0, 5);
-  const funcs = text.match(FUNC);
-  if (hexes.length || funcs) {
-    if (LEGACY.has(rel)) {
-      legacy++;
-      console.warn(`[tokens-legacy] ${rel} 存量散写（冻结，P2/P3 清）：${[...hexes, ...(funcs ? [funcs[0]] : [])].join(" ")}`);
-    } else {
-      errors++;
-      console.error(`[tokens] ${rel} 散写色值：${[...hexes, ...(funcs ? [funcs[0]] : [])].join(" ")}`);
+
+  const detail = [];
+  const hexes = [...new Set([...text.matchAll(HEX)].map((m) => m[0]))];
+  const funcs = [...new Set([...text.matchAll(FUNC)].map((m) => m[0].replace(/\s*\($/, '(')))];
+  if (hexes.length || funcs.length) {
+    detail.push(`散写色值：${[...hexes, ...funcs].slice(0, 5).join(' ')}`);
+  }
+
+  if (!isTs) {
+    const badFonts = [];
+    for (const match of text.matchAll(FONT_SIZE)) {
+      const value = match[1].trim();
+      if (!FONT_VALUE_OK.test(value)) badFonts.push(`font-size: ${value.slice(0, 24)}`);
+    }
+    if (badFonts.length) {
+      detail.push(`裸字号 ${badFonts.length} 处（改 var(--ksu-fs-*)）：${badFonts.slice(0, 3).join(' / ')}`);
     }
   }
-  const fonts = skipFontCheck ? null : text.match(FONT_PX);
-  if (fonts) {
-    warns++;
-    console.warn(`[tokens-warn] ${rel} 裸字号 ${fonts.length} 处（P2 再收紧）：${fonts.slice(0, 3).join(" / ")}`);
+
+  const legacy = [...new Set([...text.matchAll(LEGACY_VAR)].map((m) => m[0]))];
+  if (legacy.length) {
+    detail.push(`已退役变量 ${legacy.length} 处：${legacy.slice(0, 3).join(' ')}`);
+  }
+
+  if (detail.length) {
+    errors++;
+    console.error(`[tokens] ${rel}\n  - ${detail.join('\n  - ')}`);
   }
 }
 
 if (errors) {
-  console.error(`\n散写色值 ${errors} 个文件，请全部改成 var(--sa-*)，定义只许进 tokens-a.css / chart-palette.ts。`);
+  console.error(`\n${errors} 个文件违反设计令牌门禁。色值只能进 src/styles/tokens-a.css 与 src/styles/chart-palette.ts，`);
+  console.error('字号只能 var(--ksu-fs-*)，旧 --sa-* / bridge-a 变量名已退役。');
   process.exit(1);
 }
-console.log(`色值门禁通过（存量 ${legacy} 个文件冻结待迁）。${warns ? `裸字号告警 ${warns} 个文件，P2 收紧。` : "无裸字号。"}`);
+console.log(`令牌门禁通过：${files.length} 个样式/脚本文件，无散写色值、无裸字号、无退役变量引用。`);

@@ -12,12 +12,112 @@
    ========================================================================== */
 
 /* ==========================================================================
+   0. 文档底座：body / 全局重置 / 可访问性兜底
+   旧 src/styles.css 退役后这里是唯一的全局层：颜色只能 token，
+   字号只能 var(--ksu-fs-*)。Teleport 到 body 的弹层（.ksu-sheet-overlay）
+   不在 .ksu-app 内，也靠这一层兜底。
+   ========================================================================== */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  min-width: 360px;
+  min-height: 100dvh;
+  overflow: hidden;
+  color: var(--ksu-on-surface);
+  background: var(--ksu-page);
+  font-family: var(--ksu-font);
+  font-size: var(--ksu-fs-body);
+  line-height: var(--ksu-leading-loose);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: var(--ksu-primary-soft);
+}
+
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+  letter-spacing: -0.01em;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+code,
+pre,
+.mono {
+  font-family: var(--ksu-font-mono);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ksu-primary);
+  outline-offset: 2px;
+  border-radius: var(--ksu-radius-8);
+}
+
+@media (pointer: fine) {
+  html {
+    overscroll-behavior: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .ksu-banner,
+  .ksu-sheet,
+  .ksu-dock,
+  .ksu-status-stack > * {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* ==========================================================================
    1. 整窗
    ========================================================================== */
 .ksu-app {
   display: grid;
   grid-template-rows: var(--ksu-titlebar-h) minmax(0, 1fr);
   height: 100dvh;
+  /* WebView 全屏（viewport-fit=cover）时给系统栏让位；桌面端 env() 为 0 */
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px)
+    env(safe-area-inset-left, 0px);
   min-height: 0;
   overflow: hidden;
   color: var(--ksu-on-surface);
@@ -27,12 +127,6 @@
   line-height: var(--ksu-leading-normal);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-}
-
-.ksu-app *,
-.ksu-app *::before,
-.ksu-app *::after {
-  box-sizing: border-box;
 }
 
 /* ==========================================================================
@@ -408,7 +502,8 @@
   width: 100%;
   max-width: none;
   height: calc(var(--ksu-navbar-h) + env(safe-area-inset-bottom, 0px));
-  padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+  padding: 6px calc(8px + env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px))
+    calc(8px + env(safe-area-inset-left, 0px));
   transform: none;
   justify-content: center;
   border: 0;
@@ -571,8 +666,30 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(var(--ksu-grid-min), 1fr));
   gap: var(--ksu-grid-gap);
-  align-items: start;
+  /* 同一行卡片等高：避免短卡与长卡并排时出现阶梯状空洞 */
+  align-items: stretch;
   min-width: 0;
+}
+
+/* 指标条：KPI 小卡固定 2 / 3 / 6 列分档。
+   不用 auto-fit：6 个指标在“只能排 5 列”的宽度会落单成 5+1，行列都留洞。 */
+.ksu-kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ksu-grid-gap);
+  min-width: 0;
+}
+
+@media (min-width: 700px) {
+  .ksu-kpi-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1360px) {
+  .ksu-kpi-strip {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
 }
 
 .ksu-span-2 {
@@ -954,6 +1071,7 @@ a.ksu-row:active {
 /* 开关：M3 52×32，拇指 28，选中带勾 */
 .ksu-switch {
   position: relative;
+  /* 触控命中区比轨道大一圈（::before 在下方，不改变视觉） */
   flex-shrink: 0;
   width: var(--ksu-switch-w);
   height: var(--ksu-switch-h);
@@ -970,6 +1088,15 @@ a.ksu-row:active {
 .ksu-switch:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+@media (pointer: coarse), (max-width: 1023.98px) {
+  /* 32px 轨道 + 上下各 6px 透明命中区 = 44，满足平板触控保底 */
+  .ksu-switch::before {
+    content: '';
+    position: absolute;
+    inset: -6px -4px;
+  }
 }
 
 .ksu-switch[aria-checked='true'] {
@@ -1412,6 +1539,30 @@ a.ksu-row:active {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
+  min-width: 0;
+}
+
+/* 横排动作组（卡内 / 空态里的一排按钮，替代旧 .button-row） */
+.ksu-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ksu-space-2);
+  min-width: 0;
+}
+
+/* 行内控件组：输入 / 下拉 + 一个小按钮（替代旧 .inline-field） */
+.ksu-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ksu-space-2);
+  min-width: 0;
+}
+
+.ksu-inline > .ksu-input,
+.ksu-inline > .ksu-select {
+  flex: 1 1 220px;
   min-width: 0;
 }
 
@@ -1955,12 +2106,23 @@ a.ksu-row:active {
     display: none;
   }
 
+  /* 侧栏隐藏后 .ksu-main 会落进 auto 列、右侧 1fr 空成黑边；窄屏改单列 */
+  .ksu-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .ksu-dock {
     display: flex;
   }
 
+  /* 底栏是 fixed：页尾留出「底栏高度 + 安全区 + 一段呼吸」，输入框不会被压住 */
   .ksu-page-bottom {
-    height: calc(var(--ksu-dock-h) + var(--ksu-dock-bottom) + 32px);
+    height: calc(var(--ksu-navbar-h) + env(safe-area-inset-bottom, 0px) + var(--ksu-space-6));
+  }
+
+  /* 软键盘弹起时 focus 滚动至少把控件带到「底栏上方」 */
+  .ksu-main {
+    scroll-padding-bottom: calc(var(--ksu-navbar-h) + env(safe-area-inset-bottom, 0px) + var(--ksu-space-6));
   }
 
   .ksu-page-head {
@@ -2045,6 +2207,29 @@ a.ksu-row:active {
   .ksu-segmented-item.active,
   .ksu-tab.active {
     border: 2px solid currentColor;
+  }
+}
+
+/* ==========================================================================
+   17. 触控保底：指针粗（平板 / 触摸屏）或窄窗口时，可点控件至少 44 高
+   （原 bridge-a.css 的平板保底；checkbox/radio 不放大，交给行点击区）
+   ========================================================================== */
+@media (pointer: coarse), (max-width: 1023.98px) {
+  .ksu-main button,
+  .ksu-main select,
+  .ksu-main textarea,
+  .ksu-main summary,
+  .ksu-sheet button,
+  .ksu-sheet select,
+  .ksu-sheet textarea {
+    min-height: var(--ksu-touch-min);
+  }
+
+  .ksu-main button.ksu-switch,
+  .ksu-main button.ksu-winctl-close,
+  .ksu-main input[type='checkbox'],
+  .ksu-main input[type='radio'] {
+    min-height: 0;
   }
 }
 

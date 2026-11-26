@@ -54,19 +54,20 @@ const paths = computed(() => props.series.map((series) => {
 </template>
 
 <style scoped>
+/* 颜色只走 tokens-a.css 的 --ksu-*，字号走 --ksu-fs-*（跟随 90/100/110% 字号缩放）。 */
 .scope-chart { display: grid; grid-template-columns: minmax(0, 1fr) 230px; gap: 12px; align-items: stretch; }
-svg { width: 100%; min-height: 230px; background: var(--sa-bg-sunken); border: 1px solid var(--line); }
-.grid line { stroke: var(--sa-line); stroke-width: 1; }
+svg { width: 100%; min-height: 230px; background: var(--ksu-inset); border: 1px solid var(--ksu-divider); border-radius: var(--ksu-radius-12); }
+.grid line { stroke: var(--ksu-divider); stroke-width: 1; }
 polyline { fill: none; stroke-width: 2; vector-effect: non-scaling-stroke; }
-text { fill: var(--sa-faint); font-size: var(--sa-text-12); }
+text { fill: var(--ksu-on-surface-variant); font-size: var(--ksu-fs-caption); }
 .scope-legend { display: flex; flex-direction: column; gap: 7px; }
-.scope-legend > div { display: grid; grid-template-columns: 8px 1fr auto; gap: 7px; align-items: center; padding: 8px; background: var(--sa-bg-sunken); }
+.scope-legend > div { display: grid; grid-template-columns: 8px 1fr auto; gap: 7px; align-items: center; padding: 8px; border-radius: var(--ksu-radius-10); background: var(--ksu-inset); }
 .scope-legend i { width: 8px; height: 8px; border-radius: 50%; }
-.scope-legend strong { font-size: var(--sa-text-12); }
-.scope-legend span { font-size: var(--sa-text-12); font-variant-numeric: tabular-nums; }
-.scope-legend small { grid-column: 2 / -1; color: var(--sa-muted); font-size: var(--sa-text-10); }
+.scope-legend strong { font-size: var(--ksu-fs-caption); font-weight: var(--ksu-weight-semibold); }
+.scope-legend span { font-size: var(--ksu-fs-caption); font-variant-numeric: tabular-nums; }
+.scope-legend small { grid-column: 2 / -1; color: var(--ksu-on-surface-variant); font-size: var(--ksu-fs-caption2); }
 @media (max-width: 1180px) { .scope-chart { grid-template-columns: 1fr; } .scope-legend { display: grid; grid-template-columns: repeat(3, 1fr); } }
 
-.scope-empty { align-self: center; padding: 24px; color: var(--sa-muted); font-size: var(--sa-text-12); line-height: 1.8; text-align: center; }
+.scope-empty { align-self: center; padding: var(--ksu-space-6); color: var(--ksu-on-surface-variant); font-size: var(--ksu-fs-caption); line-height: var(--ksu-leading-loose); text-align: center; }
 @media (max-width: 640px) { .scope-legend { grid-template-columns: 1fr; } }
 </style>

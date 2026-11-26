@@ -1,6 +1,6 @@
 /* 图表序列配色唯一来源（数据色，非 UI 铬）。
-   取值与 tokens-a.css 的 --sa-chart-* / --sa-hist-* 保持一致，
-   改色两边一起改，不要在组件里另起数组。 */
+   这是唯一允许写 hex 的 JS 文件（lint:tokens 白名单）；
+   数据序列色不进 tokens-a.css，组件里不要在本地另起数组。 */
 
 export const CHART_COLORS: readonly string[] = [
   '#eba937',

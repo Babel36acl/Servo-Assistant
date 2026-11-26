@@ -37,18 +37,19 @@ Rust 当前基线为 71 项（另 1 项崩溃恢复子进程入口按设置忽�
 
 ## 三条铁律
 
-1. **颜色只进 `src/styles/tokens-a.css`**（图表序列色进 `src/styles/chart-palette.ts`，两边取值保持一致）。新文件出现 hex 直接被 `lint:tokens` 拦下。
-2. **移动 `src/` 下的文件，必须同步改测试夹具**：`tests/*.test.mjs` 是把对应源码 transpile 后在 vm 里跑的，路径写死在夹具里（见 `readFileSync(new URL(...))` 那行）。
+1. **颜色只进 `src/styles/tokens-a.css`**（图表序列色进 `src/styles/chart-palette.ts`）。新文件出现 hex / rgb() 直接被 `lint:tokens` 拦下；裸字号和非 `var(--ksu-fs-*)` 字号、以及已退役的 `--sa-*` 变量名同样报错。
+2. **移动 `src/` 下的文件，必须同步改测试夹具**：`tests/*.test.mjs` 是把对应源码 transpile 后在 vm 里跑的，入口路径写死在夹具里（见 `readFileSync(...)` 那行）。`communication.test.mjs` 只 mock vue / tauri / api，其余相对导入会从 `src/` 递归加载真实源码——拆 composable 时不用逐个补 mock，但入口必须是 `src/composables/useServo.ts`。
 3. **改 Profile/录制契约必须更新 `docs/`**：Profile 1.0、EtherCAT 与录制、界面约束分别有对应文档，格式变化要同步契约与验收说明。
 
 ## 目录地图
 
 - `src/shell/`：FlClash 式壳（自绘拖拽条 `TitleBar`、图标栏 `RailNav`、窄屏底栏 `BottomNav`、`ui-mode.ts` 主题/字号/侧栏偏好）
 - `src/components/ksu/`：卡片/行/开关/分段/按钮等 UI 原语
-- `src/composables/useServo.ts`：应用状态单例（首个调用方必须是 App.vue，生命周期绑应用壳）
+- `src/composables/useServo.ts`：对外聚合单例（首个调用方必须是 App.vue，生命周期绑应用壳）
+- `src/composables/servo/`：领域实现（core / confirm / communication / monitoring / parameters / connection / format）
 - `src/views/`：七个工作区视图（连接/参数/监控/诊断/通信/审计/设置）
-- `src/features/`：`recording/`（录制解析）、`ethercat/`（主站、连接入口）、`modbus/`（寄存器扫描）
-- `src/styles/`：`tokens-a.css`（唯一色源）/ `chart-palette.ts` / `ksu.css` / `views.css`
+- `src/features/`：`connection/`（连接页卡片）、`recording/`（录制解析）、`ethercat/`（主站、连接入口）、`modbus/`（寄存器扫描）
+- `src/styles/`：`tokens-a.css`（唯一色源）/ `chart-palette.ts` / `ksu.css`（含全局底座）/ `views.css`
 - `src-tauri/src/`：`modbus.rs` / `modbus_tcp.rs` / `runtime.rs` / `discovery.rs` / `scan.rs` / `master.rs` / `ethercat.rs` / 录制与索引模块
 - `.agents/skills/servo-profile-from-pdf/`：从伺服手册生成 Profile 的 AI Skill（仓库只保留这一份，不要在 docs 复制第二份）
 - `scripts/`：`lint-tokens.mjs`、`with-msvc.cmd`、`release-version.ps1`、`package-portable.ps1`、`verify-linux-package.sh`

@@ -18,27 +18,7 @@
   max-width: 24rem;
 }
 
-/* 卡内按钮组 / 行内控件：契约只给行控件，卡内横排仍沿用旧业务类名 */
-.ksu-page .button-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--ksu-space-2);
-}
-
-.ksu-page .inline-field {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--ksu-space-2);
-  min-width: 0;
-}
-
-.ksu-page .inline-field > .ksu-input,
-.ksu-page .inline-field > .ksu-select {
-  flex: 1 1 220px;
-  min-width: 0;
-}
+/* 卡内按钮组 / 行内控件：统一用 ksu.css 的 .ksu-actions / .ksu-inline */
 
 /* 行尾编辑控件：参数目标值 / 对象待写值等窄输入 */
 .ksu-page .ksu-row-control > .ksu-input,
@@ -191,13 +171,64 @@
   overflow-wrap: anywhere;
 }
 
-/* 连接方式四选一：窄侧栏允许换行，保持分段控件外观 */
+/* 连接方式五选一：多行时胶囊外框会被撑成椭圆，改用网格 + 16 圆角块。
+   窄卡（侧栏列）3+2 两行，6 列网格让每行都铺满；卡片够宽时一行 5 项。 */
+.ksu-page .ksu-field:has(> .ksu-segmented--wrap) {
+  container-type: inline-size;
+}
+
 .ksu-page .ksu-segmented--wrap {
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 3px;
   width: 100%;
+  border-radius: var(--ksu-radius-16);
 }
 
 .ksu-page .ksu-segmented--wrap .ksu-segmented-item {
-  flex: 1 1 calc(50% - 4px);
-  padding: 0 10px;
+  grid-column: span 2;
+  min-width: 0;
+  padding: 0 8px;
+  border-radius: var(--ksu-radius-12);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+
+.ksu-page .ksu-segmented--wrap .ksu-segmented-item:nth-child(n + 4) {
+  grid-column: span 3;
+}
+
+@container (min-width: 460px) {
+  .ksu-page .ksu-segmented--wrap {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .ksu-page .ksu-segmented--wrap .ksu-segmented-item,
+  .ksu-page .ksu-segmented--wrap .ksu-segmented-item:nth-child(n + 4) {
+    grid-column: auto;
+  }
+}
+
+/* 连接页设备名：卡片内不该用页标题字阶（24/28），降一档到 title2，保住层级 */
+.ksu-page .ksu-device-name {
+  margin: 0;
+  font-size: var(--ksu-fs-title2);
+  font-weight: var(--ksu-weight-semibold);
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--ksu-on-surface);
+  overflow-wrap: anywhere;
+}
+
+/* 大数字卡在窄卡里不再撑出横向滚动 */
+.ksu-page .ksu-kpi-strip > .ksu-card {
+  min-width: 0;
+}
+
+/* KPI 卡只有 2 列时（手机宽）数值降一档，避免 40px 数字撑破卡片 */
+@media (max-width: 699.98px) {
+  .ksu-page .ksu-kpi-strip .ksu-stat-value {
+    font-size: var(--ksu-fs-large-title);
+  }
+}
+
