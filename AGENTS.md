@@ -20,9 +20,9 @@ scripts\with-msvc.cmd pnpm tauri dev
 
 ## 架构（FlClash 改版之后）
 
-- `src/shell/` 壳（自绘拖拽条 `TitleBar` + 图标栏 `RailNav` + 窄屏 `BottomNav`，主题/侧栏/字号在 `ui-mode.ts`）→ `src/composables/useServo.ts` 单例（首个调用方必须是 App.vue）→ `src/views/` 七视图（含设置）→ `src/features/` 录制/EtherCAT/Modbus 扫描。
-- 样式：`tokens-a.css` 是唯一色源（FlClash 四级表面 + Dynamic Type 字阶），`chart-palette.ts` 是唯一 JS 色源；`ksu.css` 写壳/卡片/行/控件，`views.css` 只放视图微调，旧 `styles.css` 冻结只删不加。尺寸/颜色规格见 `docs/flclash-win-spec.md`。
-- 测试是源码直测：`tests/*.test.mjs` 把目标源码 transpile 后在 vm 里跑，`require` 只 mock 了 vue/tauri/同级模块。**搬文件必改夹具里的 `readFileSync` 路径**，加 `defineExpose`/`defineEmits` 要同步补 mock。
+- `src/shell/` 壳（自绘拖拽条 `TitleBar` + 图标栏 `RailNav` + 窄屏 `BottomNav`，主题/侧栏/字号在 `ui-mode.ts`）→ `src/composables/useServo.ts` 聚合单例（首个调用方必须是 App.vue；领域实现拆在 `src/composables/servo/`）→ `src/views/` 七视图（含设置）→ `src/features/` 连接卡片/录制/EtherCAT/Modbus 扫描。
+- 样式：`tokens-a.css` 是唯一色源（FlClash 四级表面 + Dynamic Type 字阶），`chart-palette.ts` 是唯一 JS 色源；`ksu.css` 写全局底座 + 壳/卡片/行/控件，`views.css` 只放视图微调。旧 `styles.css` 与 `bridge-a.css` 已退役、`--sa-*` 别名已删，`pnpm lint:tokens` 会拦裸字号 / 散写色值 / 旧变量名回流。尺寸/颜色规格见 `docs/flclash-win-spec.md`。
+- 测试是源码直测：`tests/*.test.mjs` 把目标源码 transpile 后在 vm 里跑，夹具只 mock vue / tauri / api，其余相对导入按路径递归读真实源码。**搬文件必改夹具里的入口路径**，加 `defineExpose`/`defineEmits` 要同步补 mock。
 - Tauri 窗口 `decorations:false` + 前端自绘标题栏（`data-tauri-drag-region`）；窗口按钮依赖 `src-tauri/capabilities/default.json` 里的 `core:window:*` 写权限，改标题栏先确认拖拽区不断、能力没删。
 
 ## 约定
