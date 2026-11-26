@@ -14,6 +14,14 @@ val tauriProperties = Properties().apply {
     }
 }
 
+// 发布签名只从环境变量读取，仓库内不存任何密钥文件：
+// ANDROID_KEYSTORE_PATH / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD。
+// 未提供 keystore（或路径不存在）时 release 构建照常完成，只是产出未签名 APK。
+val releaseKeystoreFile = System.getenv("ANDROID_KEYSTORE_PATH")
+    ?.takeIf { it.isNotBlank() }
+    ?.let { path -> File(path) }
+    ?.takeIf { it.isFile }
+
 android {
     compileSdk = 37
     namespace = "com.servoassistant.desktop"
@@ -24,6 +32,16 @@ android {
         targetSdk = 37
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
+    }
+    signingConfigs {
+        if (releaseKeystoreFile != null) {
+            create("release") {
+                storeFile = releaseKeystoreFile
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
     }
     buildTypes {
         getByName("debug") {
@@ -39,6 +57,9 @@ android {
             }
         }
         getByName("release") {
+            if (releaseKeystoreFile != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             optimization {
                enable = true
             }

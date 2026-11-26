@@ -26,12 +26,32 @@ TTL→RS485 隔离模块（自动流向）
 
 仓库已含 `src-tauri/gen/android`（tauri 2 工程）。
 
-前置：JDK 17、Android SDK（platform-tools、platforms;android-34、build-tools;34.0.0）、NDK r27c，`JAVA_HOME`/`ANDROID_HOME`/`ANDROID_NDK_HOME` 指好后：
+前置：JDK 17、Android SDK（platform-tools、platforms;android-37、build-tools;37.0.0）、NDK r27，`JAVA_HOME`/`ANDROID_HOME`/`ANDROID_NDK_HOME` 指好后：
 
 ```sh
-pnpm tauri android build --debug   # 出 debug APK：src-tauri/gen/android/app/build/outputs/apk/
-pnpm tauri android build           # 出签名 release（需配置 keystore）
+pnpm install
+pnpm tauri android build --debug --target aarch64            # 出 debug APK：src-tauri/gen/android/app/build/outputs/apk/
+pnpm tauri android build --apk --target aarch64 armv7 x86_64 # 出 release APK，三个 ABI 合并为 universal
 ```
+
+release 签名由 `gen/android/app/build.gradle.kts` 的 `signingConfigs.release` 从环境变量读取，仓库内不存任何密钥文件：
+
+```sh
+export ANDROID_KEYSTORE_PATH=/绝对路径/release.jks
+export ANDROID_KEYSTORE_PASSWORD=...   # 值只在维护者本机/仓库 secrets
+export ANDROID_KEY_ALIAS=...
+export ANDROID_KEY_PASSWORD=...
+pnpm tauri android build --apk --target aarch64
+```
+
+未设置 `ANDROID_KEYSTORE_PATH`（或文件不存在）时签名配置不挂载，release 构建照常完成，只是产出未签名 APK（`*-release-unsigned.apk`），不能直接分发。
+
+GitHub Actions 两条流水线：
+
+- 「安卓构建」（`.github/workflows/android.yml`）：main 推送到 `src/**`、`src-tauri/**` 或该工作流自身时跑 aarch64 debug APK 冒烟，artifact 名 `servo-assistant-debug-apk`。
+- 「Release」（`.github/workflows/release.yml`）的 `android` job：推送 `vX.Y.Z` 标签时用仓库 secrets 里的 keystore 构建**签名** universal APK，`apksigner verify --print-certs` 校验后以 `Servo-Assistant_<版本>_android_universal.apk` 上传 artifact `release-android`。版本号由 `scripts/release-version.ps1` 改写 `tauri.conf.json`，Tauri 构建时再生成 `app/tauri.properties`（versionName = 该版本，versionCode = 主*1000000 + 次*1000 + 修订）。
+
+不打标签也能预演：手动 dispatch `Release` 并填 `version`（如 `0.4.99`），只构建 artifact，publish 被跳过、不会创建 Release。
 
 Rust 侧交叉编译验证（无需 SDK，只要 NDK 的 clang 供 C 组件）：
 
@@ -61,5 +81,5 @@ Android 12+ 扫描/连接需要 `BLUETOOTH_SCAN`/`BLUETOOTH_CONNECT` 运行时�
   ```
 
   （gradle 的 rust 任务要求 `tauri android build` CLI 驻留运行，所以直接排除它们；产物在 `app/build/outputs/apk/universal/debug/`。）
-- debug APK 约 200MB 是 Rust debug 符号所致，属正常；正式发布走 `--target aarch64` + release/proguard。
+- debug APK 约 200MB 是 Rust debug 符号所致，属正常；正式发布走 `Release` 工作流的三 ABI universal release + proguard。
 - gradle 走代理：`GRADLE_OPTS="-Dhttps.proxyHost=… -Dhttps.proxyPort=…" pnpm tauri android build`。
