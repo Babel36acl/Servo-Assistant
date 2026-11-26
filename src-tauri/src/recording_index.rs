@@ -804,7 +804,7 @@ mod tests {
             elapsed_us: n,
             source: "test-port".into(),
             protocol: "modbus-rtu".into(),
-            direction: if n % 2 == 0 { "rx" } else { "tx" }.into(),
+            direction: if n.is_multiple_of(2) { "rx" } else { "tx" }.into(),
             transaction: n,
             bytes: vec![1, 3],
             detail: format!("record-{n}"),

@@ -362,6 +362,8 @@ pub async fn ethercat_diagnostics(
     .map_err(|error| error.to_string())?
 }
 
+/// 仅在 Windows 原生路径使用（SDO Info 对象描述的名字字段）。
+#[cfg(windows)]
 fn c_name(bytes: &[u8; 64]) -> String {
     String::from_utf8_lossy(bytes)
         .trim_end_matches('\0')
@@ -369,6 +371,8 @@ fn c_name(bytes: &[u8; 64]) -> String {
         .to_string()
 }
 
+/// 由 `coe_object` 使用：Windows 原生枚举路径与单元测试都需要它。
+#[cfg(any(windows, test))]
 fn coe_limits(size: u8, signed: bool) -> (String, String) {
     if signed {
         match size {
@@ -389,6 +393,7 @@ fn coe_limits(size: u8, signed: bool) -> (String, String) {
 
 /// Map one CoE object-dictionary entry to the app's integer object contract.
 /// Floats, strings, domains and bit-sized entries are intentionally skipped.
+#[cfg(any(windows, test))]
 fn coe_object(
     index: u16,
     sub: u8,
