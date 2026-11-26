@@ -28,9 +28,12 @@ Rust 当前基线为 71 项（另 1 项崩溃恢复子进程入口按设置忽�
 ## 提交与发布
 
 - 一次提交只做一件事，中文信息，暂存时显式指定路径，不用 `git add -A`。
-- PR 只触发 `CI` 检查，不打包、不发布；不要为普通 PR 修改版本号。
-- 发布只由维护者推送 `v<主>.<次>.<修订>` 标签触发：先同步三处版本号与 [发布说明](docs/release-notes.md)，提交并推送 `main`，再 `git tag vX.Y.Z && git push origin vX.Y.Z`。
-- `main` 推送不再自动构建；`Release` 工作流只在标签上运行。
+- PR 只触发 `CI` 检查（Windows + Linux 两套；Linux 侧专门暴露 `#[cfg(windows)]` 分支不参与编译时的 dead_code），不打包、不发布；不要为普通 PR 修改版本号。
+- 发布只由维护者推送 `v<主>.<次>.<修订>` 标签触发：先更新 [发布说明](docs/release-notes.md)，提交并推送 `main`，再 `git tag vX.Y.Z && git push origin vX.Y.Z`。标签版本由 `scripts/release-version.ps1` 在构建时写入 `package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml` 与 `Cargo.lock`。
+- `Release` 产物：Windows MSI / NSIS / 便携 ZIP、Linux DEB / RPM / AppImage，以及**安卓签名 universal APK**（`Servo-Assistant_<版本>_android_universal.apk`，arm64-v8a / armeabi-v7a / x86_64 三合一，minSdk 26）。
+- 安卓签名使用仓库 secrets：`ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`。keystore 原件与口令只备份在维护者本机的私密目录，**任何密钥文件、口令都不得提交进仓库或贴进 PR/issue**。
+- 不发版也能预演整套构建：`gh workflow run release.yml -f version=0.4.99`，只产出 artifact，publish 被跳过。
+- `main` 推送不自动打包，只跑 `CI` 与「安卓构建」的 debug APK 冒烟。
 
 ## 三条铁律
 
