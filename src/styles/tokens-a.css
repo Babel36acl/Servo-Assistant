@@ -115,13 +115,13 @@
 
   /* ---- 控件 ---- */
   --ksu-btn-h: 44px;
-  --ksu-btn-h-sm: 36px;
+  --ksu-btn-h-sm: 40px; /* 触控保底：平板 / 窄屏下小按钮也不低于 40 */
   --ksu-btn-radius: var(--ksu-radius-pill);
   --ksu-fab: 48px;
   --ksu-fab-lg: 56px;
   --ksu-field-h: 44px;
-  --ksu-segmented-h: 40px;
-  --ksu-tab-h: 40px;
+  --ksu-segmented-h: 46px; /* 3px 内距 + 40 触控项 */
+  --ksu-tab-h: 46px; /* 同上：标签页触控项 40 */
   --ksu-switch-w: 52px; /* M3 52×32，拇指 28 选中带勾 */
   --ksu-switch-h: 32px;
   --ksu-switch-thumb-size: 28px;

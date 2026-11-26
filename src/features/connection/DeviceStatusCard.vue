@@ -30,7 +30,7 @@ const modbusMode = computed(() => connectionMode.value !== "ethercat");
     </div>
     <div class="ksu-card-body">
       <div>
-        <h2 class="ksu-page-title">{{ summary?.deviceName ?? (profile ? '设备 Profile 已加载' : '尚未导入设备 Profile') }}</h2>
+        <h2 class="ksu-device-name">{{ summary?.deviceName ?? (profile ? '设备 Profile 已加载' : '尚未导入设备 Profile') }}</h2>
         <p class="ksu-hint">
           <template v-if="summary">Profile {{ summary.profileVersion }} · {{ summary.parameterCount }} 参数 · {{ summary.statusCount }} 状态量</template>
           <template v-else-if="profile">Profile 已就绪，选择连接方式后连接。</template>

@@ -115,6 +115,9 @@ pre,
   display: grid;
   grid-template-rows: var(--ksu-titlebar-h) minmax(0, 1fr);
   height: 100dvh;
+  /* WebView 全屏（viewport-fit=cover）时给系统栏让位；桌面端 env() 为 0 */
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px)
+    env(safe-area-inset-left, 0px);
   min-height: 0;
   overflow: hidden;
   color: var(--ksu-on-surface);
@@ -499,7 +502,8 @@ pre,
   width: 100%;
   max-width: none;
   height: calc(var(--ksu-navbar-h) + env(safe-area-inset-bottom, 0px));
-  padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+  padding: 6px calc(8px + env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px))
+    calc(8px + env(safe-area-inset-left, 0px));
   transform: none;
   justify-content: center;
   border: 0;
@@ -662,7 +666,16 @@ pre,
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(var(--ksu-grid-min), 1fr));
   gap: var(--ksu-grid-gap);
-  align-items: start;
+  /* 同一行卡片等高：避免短卡与长卡并排时出现阶梯状空洞 */
+  align-items: stretch;
+  min-width: 0;
+}
+
+/* 指标条：KPI 小卡按 180 起排，宽屏能一行放下 6 个（dashboard 密度） */
+.ksu-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--ksu-grid-gap);
   min-width: 0;
 }
 
@@ -1045,6 +1058,7 @@ a.ksu-row:active {
 /* 开关：M3 52×32，拇指 28，选中带勾 */
 .ksu-switch {
   position: relative;
+  /* 触控命中区比轨道大一圈（::before 在下方，不改变视觉） */
   flex-shrink: 0;
   width: var(--ksu-switch-w);
   height: var(--ksu-switch-h);
@@ -1061,6 +1075,15 @@ a.ksu-row:active {
 .ksu-switch:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+@media (pointer: coarse), (max-width: 1023.98px) {
+  /* 32px 轨道 + 上下各 6px 透明命中区 = 44，满足平板触控保底 */
+  .ksu-switch::before {
+    content: '';
+    position: absolute;
+    inset: -6px -4px;
+  }
 }
 
 .ksu-switch[aria-checked='true'] {
@@ -2074,8 +2097,14 @@ a.ksu-row:active {
     display: flex;
   }
 
+  /* 底栏是 fixed：页尾留出「底栏高度 + 安全区 + 一段呼吸」，输入框不会被压住 */
   .ksu-page-bottom {
-    height: calc(var(--ksu-dock-h) + var(--ksu-dock-bottom) + 32px);
+    height: calc(var(--ksu-navbar-h) + env(safe-area-inset-bottom, 0px) + var(--ksu-space-6));
+  }
+
+  /* 软键盘弹起时 focus 滚动至少把控件带到「底栏上方」 */
+  .ksu-main {
+    scroll-padding-bottom: calc(var(--ksu-navbar-h) + env(safe-area-inset-bottom, 0px) + var(--ksu-space-6));
   }
 
   .ksu-page-head {

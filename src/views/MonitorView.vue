@@ -29,7 +29,7 @@ function toggleChannel(id: string): void {
     </header>
 
     <div class="ksu-page-body">
-      <div class="ksu-grid">
+      <div class="ksu-stat-grid ksu-span-full">
         <section v-for="status in headlineStatuses" :key="status.id" class="ksu-card ksu-card--sm">
           <div class="ksu-card-body">
             <div class="ksu-stat">
@@ -51,7 +51,9 @@ function toggleChannel(id: string): void {
             </div>
           </section>
         </template>
+      </div>
 
+      <div class="ksu-grid">
         <section class="ksu-card ksu-span-full">
           <div class="ksu-card-head">
             <div>
@@ -93,8 +95,9 @@ function toggleChannel(id: string): void {
               </div>
             </div>
           </div>
-          <div v-else class="ksu-card-body">
-            <p class="ksu-hint">导入并连接设备后，可在此选择曲线通道。</p>
+          <div v-else class="ksu-empty">
+            <strong>还没有可选通道</strong>
+            <p>导入并连接设备后，可在此选择曲线通道。</p>
           </div>
         </section>
 

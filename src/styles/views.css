@@ -181,3 +181,24 @@
   flex: 1 1 calc(50% - 4px);
   padding: 0 10px;
 }
+
+/* 连接页设备名：卡片内不该用页标题字阶（24/28），降一档到 title2，保住层级 */
+.ksu-page .ksu-device-name {
+  margin: 0;
+  font-size: var(--ksu-fs-title2);
+  font-weight: var(--ksu-weight-semibold);
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--ksu-on-surface);
+  overflow-wrap: anywhere;
+}
+
+/* 居中的大数字卡在窄卡里不再撑出横向滚动 */
+.ksu-page .ksu-stat-grid > .ksu-card {
+  min-width: 0;
+}
+
+/* 连接方式五选一：2 列换行后最后一项独占一行，避免右侧留半格空洞 */
+.ksu-page .ksu-segmented--wrap .ksu-segmented-item:last-child:nth-child(odd) {
+  flex-basis: 100%;
+}
