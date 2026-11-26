@@ -11,14 +11,8 @@ pub async fn configure_communication(
 ) -> Result<(), String> {
     with_runtime(state, move |runtime| {
         settings.validate()?;
-        if let Some(Session::Serial(client)) = runtime.session.as_mut() {
-            client.settings = settings.clone();
-        }
-        if let Some(Session::Tcp(client)) = runtime.session.as_mut() {
-            client.settings = settings.clone();
-        }
-        if let Some(Session::Ble(client)) = runtime.session.as_mut() {
-            client.settings = settings.clone();
+        if let Some(session) = runtime.session.as_mut() {
+            session.set_settings(settings.clone());
         }
         runtime.communication = settings;
         runtime

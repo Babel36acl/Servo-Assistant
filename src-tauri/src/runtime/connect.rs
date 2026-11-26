@@ -214,14 +214,9 @@ pub async fn connect_device(
         if let Some(Session::Simulator(device)) = runtime.session.as_mut() {
             device.recorder = Some(runtime.recorder.clone());
         }
-        if let Some(Session::Serial(client)) = runtime.session.as_mut() {
-            client.settings = runtime.communication.clone();
-        }
-        if let Some(Session::Tcp(client)) = runtime.session.as_mut() {
-            client.settings = runtime.communication.clone();
-        }
-        if let Some(Session::Ble(client)) = runtime.session.as_mut() {
-            client.settings = runtime.communication.clone();
+        let settings = runtime.communication.clone();
+        if let Some(session) = runtime.session.as_mut() {
+            session.set_settings(settings);
         }
         let endpoint = match mode {
             ConnectionMode::Tcp => format!(", host={:?}, port={:?}", request.host, request.port),

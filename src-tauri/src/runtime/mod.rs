@@ -162,6 +162,16 @@ impl Session {
             Session::Tcp(_) => ConnectionMode::Tcp,
         }
     }
+
+    /// 把通讯设置应用到当前会话；模拟器没有真实链路，直接忽略。
+    fn set_settings(&mut self, settings: CommunicationSettings) {
+        match self {
+            Session::Simulator(_) => {}
+            Session::Serial(client) => client.settings = settings,
+            Session::Ble(client) => client.settings = settings,
+            Session::Tcp(client) => client.settings = settings,
+        }
+    }
 }
 
 async fn with_runtime<T, F>(state: State<'_, AppState>, operation: F) -> Result<T, String>
