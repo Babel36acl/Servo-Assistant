@@ -2106,6 +2106,11 @@ a.ksu-row:active {
     display: none;
   }
 
+  /* 侧栏隐藏后 .ksu-main 会落进 auto 列、右侧 1fr 空成黑边；窄屏改单列 */
+  .ksu-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .ksu-dock {
     display: flex;
   }
