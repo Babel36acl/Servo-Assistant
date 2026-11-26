@@ -26,3 +26,7 @@ src-tauri/target
 *.sln
 *.sw?
 .tmp/
+
+# 本地会话导出与快捷方式
+/esp32-c6-*.json
+*.lnk
