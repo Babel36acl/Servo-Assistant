@@ -4,10 +4,11 @@ import { servoApi } from "../../api";
 import type { EthercatStatus } from "../../types";
 import { useServo } from "../../composables/useServo";
 
-const { activePage, communicationTab, ethercatConnected, showError } = useServo();
+/* 后端仍校验固定短语（src-tauri/src/master/mod.rs），界面只在确认弹窗点“确认”后按契约自动带入。 */
+const CONNECT_PHRASE = "接管 EtherCAT 总线";
+const { activePage, communicationTab, ethercatConnected, showError, requestConfirm } = useServo();
 const adapters = ref<Array<{ name: string; description: string }>>([]);
 const adapter = ref("");
-const confirmation = ref("");
 const status = ref<EthercatStatus>({ connected: false, adapter: "", slaves: [], driverDropped: null });
 const busy = ref(false);
 const error = ref("");
@@ -32,10 +33,16 @@ async function refreshStatus() {
 
 async function connectMaster() {
   if (busy.value || !adapter.value) return;
+  const confirmed = await requestConfirm({
+    title: "接管 EtherCAT 总线",
+    body: `将接管 ${adapter.value} 并初始化从站与邮箱，仅请求 PRE-OP：不进入 OP、不使能伺服、不发送周期输出。`,
+    danger: true,
+  });
+  if (!confirmed) return;
   busy.value = true;
   error.value = "";
   try {
-    status.value = await servoApi.ethercatConnect(adapter.value, confirmation.value);
+    status.value = await servoApi.ethercatConnect(adapter.value, CONNECT_PHRASE);
     ethercatConnected.value = status.value.connected;
   } catch (reason) {
     error.value = String(reason);
@@ -95,10 +102,6 @@ function openMaster() {
         </select>
         <button class="ksu-btn ksu-btn--sm" :disabled="status.connected || busy" @click="refreshAdapters">刷新</button>
       </div>
-    </label>
-    <label class="ksu-field">
-      <span class="ksu-field-label">接管确认</span>
-      <input class="ksu-input" v-model="confirmation" :disabled="status.connected || busy" placeholder="输入：接管 EtherCAT 总线" aria-label="主站接管确认" />
     </label>
   </div>
 

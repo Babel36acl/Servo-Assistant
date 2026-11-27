@@ -31,8 +31,8 @@ Profile 是声明式 JSON 数据，用于把设备参数 ID、Modbus 地址、�
 
 ## 写入风险
 
-- `low` / `medium`：显示差异并确认后写入。
-- `high` / `critical`：还必须输入 `写入 <parameterId>`。
+- `low` / `medium`：显示差异并在确认弹窗点“确认”后写入。
+- `high` / `critical`：确认弹窗以危险样式强调；IPC 仍要求 `confirmationPhrase` 为 `写入 <parameterId>`，该短语由界面在确认后自动带入，不再要求用户手输。
 - `access=ro` 的参数永远不能写入。
 - 参数写入使用 FC06；写前读取当前原始值，写后再次读取并校验一致。
 - 批量写入先对全部选中项执行写前比较，再逐项写入和回读。

@@ -17,7 +17,7 @@ scripts\with-msvc.cmd pnpm tauri dev
 ```sh
 pnpm lint:tokens   # 设计令牌：新增样式禁散写色值
 pnpm build         # 含 vue-tsc --noEmit
-pnpm test          # 前端 25 用例（源码直测，无需真机）
+pnpm test          # 前端 26 用例（源码直测，无需真机）
 # Windows 本机（Linux/CI 可去掉 with-msvc.cmd 前缀）：
 scripts\with-msvc.cmd cargo test --manifest-path src-tauri/Cargo.toml
 scripts\with-msvc.cmd cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings

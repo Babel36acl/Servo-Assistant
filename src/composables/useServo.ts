@@ -2,7 +2,7 @@
    onMounted / onUnmounted 因此绑在应用壳上；各视图只调用 useServo() 拿同一份状态。
    领域实现按职责拆在 ./servo/ 下：
      core.ts          页面导航 / Profile / busy / 审计 / 销毁标记
-     confirm.ts       确认弹窗状态机（短语校验 + 焦点还原）
+     confirm.ts       确认弹窗状态机（点击确认 + 焦点还原）
      communication.ts 串口重试与链路统计
      monitoring.ts    状态轮询 / 曲线采样 / 稳定性测试
      parameters.ts    参数读取、写入回读、快照比较、应用与持久化

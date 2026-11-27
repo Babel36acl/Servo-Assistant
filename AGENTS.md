@@ -10,7 +10,7 @@
 pnpm install
 pnpm lint:tokens   # 色值门禁，新样式禁 hex
 pnpm build         # vue-tsc + vite 打包
-pnpm test          # node --test tests/*.test.mjs（25 用例）
+pnpm test          # node --test tests/*.test.mjs（26 用例）
 # Windows 本机：Rust/Tauri 必须经 MSVC 包装脚本（VS2022 + clang-cl），
 # 直接 cargo 会因缺 SDK 环境/本机 cl D8050 失败；VSCode 任务已内置。
 scripts\with-msvc.cmd cargo test --manifest-path src-tauri/Cargo.toml

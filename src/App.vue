@@ -16,11 +16,9 @@ import SettingsView from './views/SettingsView.vue';
 const {
   activePage, currentPage, errorMessage, communicationError,
   readActive, testActive, discoveryActive, discovery, readProgress, testProgress,
-  cancelRequested, backgroundActivity, confirmReq, confirmInput, confirmError,
-  confirmField, closeConfirm, busy, cancelDiscovery, failedGroups, staleIds,
+  cancelRequested, backgroundActivity, confirmReq,
+  closeConfirm, busy, cancelDiscovery, failedGroups, staleIds,
 } = useServo();
-// confirmField 只在模板里以 ref="confirmField" 形式绑定（确认框输入聚焦），这里显式读一次，免得被判未使用。
-void confirmField;
 void currentPage;
 
 // 截图/深链用：?page=monitor 指定初始页（仅首次进入读取，不写回 URL）。
@@ -136,19 +134,6 @@ const navBadges = computed<Partial<Record<PageId, string | number>>>(() => {
       @close="closeConfirm(null)"
     >
       <p v-if="confirmReq">{{ confirmReq.body }}</p>
-      <label v-if="confirmReq?.phrase">
-        请输入“{{ confirmReq.phrase }}”以继续
-        <input
-          ref="confirmField"
-          v-model="confirmInput"
-          class="ksu-input"
-          autocomplete="off"
-          spellcheck="false"
-          :placeholder="confirmReq.phrase"
-          @keydown.enter="closeConfirm('submit')"
-        />
-      </label>
-      <p v-if="confirmError" class="ksu-banner ksu-banner--error" role="alert">{{ confirmError }}</p>
       <template #actions>
         <KsuButton @click="closeConfirm(null)">取消</KsuButton>
         <KsuButton variant="primary" :disabled="busy" @click="closeConfirm('submit')">确认</KsuButton>

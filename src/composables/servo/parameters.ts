@@ -1,5 +1,5 @@
 /* 参数领域：读取（按连续地址分组）、逐项写入并回读、快照比较与选择性批量写、
-   应用 / 持久化事务。所有写路径都必须先走确认短语，且写前值变化即中止。 */
+   应用 / 持久化事务。所有写路径都必须先走确认弹窗，且写前值变化即中止。 */
 import { computed, ref } from "vue";
 import { servoApi } from "../../api";
 import { addressGroups } from "../../communication";
@@ -9,6 +9,13 @@ import type { createCommunication } from "./communication";
 import type { createConfirmDialog } from "./confirm";
 import type { createMonitoring } from "./monitoring";
 import { hex, riskLabel } from "./format";
+
+/* 后端 IPC 仍按固定短语校验确认（见 src-tauri/src/runtime/），但界面不再让用户手输：
+   弹窗点“确认”即视为授权，短语在这里按契约自动生成，审计里的值因此保持不变。 */
+const APPLY_PHRASE = "应用参数";
+const PERSIST_PHRASE = "持久化参数";
+const batchPhrase = (count: number) => `批量写入 ${count} 项`;
+const writePhrase = (parameterId: string) => `写入 ${parameterId}`;
 
 export function createParameters(
   core: ServoCore,
@@ -160,14 +167,12 @@ export function createParameters(
       (item) => item.changed && item.writable && selectedBatch.value.includes(item.parameterId),
     );
     if (!selected.length) return;
-    const expectedPhrase = `批量写入 ${selected.length} 项`;
-    const phrase = await dialog.requestConfirm({
+    const confirmed = await dialog.requestConfirm({
       title: "选择性批量写入",
       body: `将按当前快照选择性写入并逐项回读，任何写前值变化都会让整批操作停止，共 ${selected.length} 项。`,
       danger: true,
-      phrase: expectedPhrase,
     });
-    if (phrase === null) return;
+    if (!confirmed) return;
     core.busy.value = true;
     core.errorMessage.value = "";
     try {
@@ -177,7 +182,7 @@ export function createParameters(
           value: item.targetValue,
           expectedRaw: item.currentRaw,
         })),
-        confirmationPhrase: phrase,
+        confirmationPhrase: batchPhrase(selected.length),
       });
       for (const item of result.completed) {
         values.value[item.parameterId] = {
@@ -221,13 +226,12 @@ export function createParameters(
       return;
     }
     const highRisk = parameter.risk === "high" || parameter.risk === "critical";
-    const phrase = await dialog.requestConfirm({
+    const confirmed = await dialog.requestConfirm({
       title: `写入 ${parameter.parameterId}`,
       body: `${parameter.parameterId}：${current.value} → ${value} ${parameter.unit}。写入后立即回读校验，不会自动应用或持久化。`,
       danger: highRisk,
-      phrase: highRisk ? `写入 ${parameter.parameterId}` : undefined,
     });
-    if (phrase === null) return;
+    if (!confirmed) return;
     core.busy.value = true;
     core.errorMessage.value = "";
     try {
@@ -236,7 +240,7 @@ export function createParameters(
         value,
         expectedRaw: current.raw,
         confirmed: true,
-        confirmationPhrase: phrase,
+        confirmationPhrase: writePhrase(parameter.parameterId),
       });
       values.value = {
         ...values.value,
@@ -257,15 +261,14 @@ export function createParameters(
   }
 
   async function applyChanges() {
-    const phrase = await dialog.requestConfirm({
+    const confirmed = await dialog.requestConfirm({
       title: "应用参数",
       body: "该操作会让已写入参数在设备上生效。",
-      phrase: "应用参数",
     });
-    if (phrase === null) return;
+    if (!confirmed) return;
     core.busy.value = true;
     try {
-      const result = await servoApi.apply(phrase);
+      const result = await servoApi.apply(APPLY_PHRASE);
       core.notice.value = `参数应用成功，设备状态 ${hex(result.observedStatus)}`;
     } catch (error) {
       core.showError(error);
@@ -276,16 +279,15 @@ export function createParameters(
   }
 
   async function persistChanges() {
-    const phrase = await dialog.requestConfirm({
+    const confirmed = await dialog.requestConfirm({
       title: "持久化参数",
       body: "即将执行 Profile 定义的持久化操作，会覆盖旧配置。",
       danger: true,
-      phrase: "持久化参数",
     });
-    if (phrase === null) return;
+    if (!confirmed) return;
     core.busy.value = true;
     try {
-      const result = await servoApi.persist(phrase);
+      const result = await servoApi.persist(PERSIST_PHRASE);
       core.notice.value = `参数持久化成功，设备状态 ${hex(result.observedStatus)}`;
     } catch (error) {
       core.showError(error);
